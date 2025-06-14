@@ -74,7 +74,7 @@ class DesktopManager(QWidget):
         role_image_mapping = {
             "网络工程师": "network_engineer.jpg",
             "系统架构师": "system_architect.jpg", 
-            "网络规划管理工程师": "Network_Planning_and_Management_Engineer.jpg"
+            "系统规划与管理师": "Network_Planning_and_Management_Engineer.jpg"
         }
         
         image_filename = role_image_mapping.get(role_name, "network_engineer.jpg")  # 默认使用网络工程师图片

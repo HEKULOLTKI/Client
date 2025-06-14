@@ -10,7 +10,7 @@ from PyQt5.QtGui import QKeySequence
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
-from transition_page import TransitionPage
+from transition_screen import TransitionScreen
 
 # 禁用Flask的默认日志输出
 log = logging.getLogger('werkzeug')
@@ -122,7 +122,7 @@ class FullscreenBrowser(QMainWindow):
         self.api_server = None
         self.api_thread = None
         self.desktop_manager_process = None
-        self.transition_page = None
+        self.transition_screen = None
         # 默认情况下允许关闭desktop_manager
         self.should_close_desktop_manager = True
         self.init_ui()
@@ -163,18 +163,25 @@ class FullscreenBrowser(QMainWindow):
     def close_fullscreen(self):
         """关闭全屏模式（线程安全）"""
         # 使用QTimer.singleShot确保在主线程中执行UI操作
-        QTimer.singleShot(0, self._show_transition_page)
+        QTimer.singleShot(0, self._show_transition_screen)
     
-    def _show_transition_page(self):
+    def _show_transition_screen(self):
         """显示过渡页面"""
-        if not self.transition_page:
-            self.transition_page = TransitionPage()
-            # 连接信号 - 过渡完成后直接关闭程序
-            self.transition_page.transition_completed.connect(self._close_application)
-            self.transition_page.force_close.connect(self._close_application)
+        # 先隐藏当前全屏浏览器窗口
+        self.hide()
         
+        # 创建新的过渡页面实例
+        self.transition_screen = TransitionScreen("正在关闭网页...", 3000)
+        
+        # 使用QTimer异步显示过渡页面，避免阻塞
+        QTimer.singleShot(0, self._show_transition_screen_async)
+        
+    def _show_transition_screen_async(self):
+        """异步显示过渡页面"""
         # 显示过渡页面并开始动画
-        self.transition_page.start_transition(3000, "正在关闭网页...")
+        self.transition_screen.show_transition()
+        # 过渡完成后关闭程序
+        QTimer.singleShot(100, self._close_application)
         
     def _close_fullscreen_impl(self):
         """实际执行关闭全屏的操作 - 改为直接关闭程序"""
@@ -249,14 +256,21 @@ class FullscreenBrowser(QMainWindow):
             
     def _show_exit_transition(self):
         """显示退出过渡页面"""
-        if not self.transition_page:
-            self.transition_page = TransitionPage()
-            # 连接信号 - 过渡完成后直接退出
-            self.transition_page.transition_completed.connect(self._exit_application)
-            self.transition_page.force_close.connect(self._exit_application)
+        # 先隐藏当前全屏浏览器窗口
+        self.hide()
         
+        # 创建新的过渡页面实例
+        self.transition_screen = TransitionScreen("正在退出程序...", 2000)
+        
+        # 使用QTimer异步显示过渡页面，避免阻塞
+        QTimer.singleShot(0, self._show_exit_transition_async)
+        
+    def _show_exit_transition_async(self):
+        """异步显示退出过渡页面"""
         # 显示过渡页面并开始动画
-        self.transition_page.start_transition(2000, "正在退出程序...")
+        self.transition_screen.show_transition()
+        # 过渡完成后退出程序
+        QTimer.singleShot(100, self._exit_application)
         
     def start_desktop_manager(self):
         """启动desktop_manager程序"""
