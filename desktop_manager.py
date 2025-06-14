@@ -1,10 +1,11 @@
 import sys
 import os
+import json
 import subprocess
 from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout, 
                              QPushButton, QLabel, QSystemTrayIcon, QMenu, 
                              QDesktopWidget, QToolButton, QFrame, QSizePolicy)
-from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 import config
 from pet_widget import PetWidget
@@ -26,10 +27,65 @@ class DesktopManager(QWidget):
         self.transition_page = None
         self.openai_chat = None  # 添加OpenAI聊天实例
         self.is_expanded = False
+        self.current_role_data = None  # 当前角色数据
+        self.role_avatar_label = None  # 角色头像标签
+        self.role_name_label = None  # 角色名称标签
+        self.role_desc_label = None  # 角色描述标签
+        self.file_watcher = None  # 文件监视器
+        self.setup_file_watcher()  # 设置文件监视器
+        self.load_role_data()  # 加载角色数据
         self.setup_ui()
         self.setup_timer()
         self.setup_animations()
         self.position_at_top()
+        
+    def setup_file_watcher(self):
+        """设置文件监视器来监听JSON文件变化"""
+        self.file_watcher = QFileSystemWatcher()
+        json_file_path = os.path.join(os.getcwd(), "received_data.json")
+        if os.path.exists(json_file_path):
+            self.file_watcher.addPath(json_file_path)
+            self.file_watcher.fileChanged.connect(self.on_json_file_changed)
+            
+    def on_json_file_changed(self):
+        """当JSON文件发生变化时的处理函数"""
+        self.load_role_data()
+        self.update_role_display()
+        
+    def load_role_data(self):
+        """从JSON文件加载角色数据"""
+        try:
+            json_file_path = os.path.join(os.getcwd(), "received_data.json")
+            if os.path.exists(json_file_path):
+                with open(json_file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.current_role_data = data
+                    print(f"已加载角色数据: {data.get('selectedRole', {}).get('label', '未知角色')}")
+            else:
+                print("未找到received_data.json文件")
+                self.current_role_data = None
+        except Exception as e:
+            print(f"加载角色数据失败: {str(e)}")
+            self.current_role_data = None
+            
+    def get_role_image_path(self, role_name):
+        """根据角色名称获取对应的图片路径"""
+        # 角色名称到图片文件名的映射
+        role_image_mapping = {
+            "网络工程师": "network_engineer.jpg",
+            "系统架构师": "system_architect.jpg", 
+            "网络规划管理工程师": "Network_Planning_and_Management_Engineer.jpg"
+        }
+        
+        image_filename = role_image_mapping.get(role_name, "network_engineer.jpg")  # 默认使用网络工程师图片
+        image_path = os.path.join("image", image_filename)
+        
+        if os.path.exists(image_path):
+            return image_path
+        else:
+            # 如果找不到对应图片，尝试使用默认图片
+            default_path = os.path.join("image", "network_engineer.jpg")
+            return default_path if os.path.exists(default_path) else None
         
     def setup_ui(self):
         """设置UI界面"""
@@ -37,9 +93,9 @@ class DesktopManager(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         
-        # 设置窗口大小
+        # 设置窗口大小 - 增加宽度以容纳角色信息
         self.setFixedHeight(60)
-        self.setMinimumWidth(800)
+        self.setMinimumWidth(1000)
         
         # 创建主布局
         main_layout = QHBoxLayout()
@@ -63,15 +119,25 @@ class DesktopManager(QWidget):
         frame_layout.setContentsMargins(15, 8, 15, 8)
         frame_layout.setSpacing(10)
         
-        # 左侧 - 系统信息区域
+        # 左侧 - 角色信息区域
+        self.create_role_section(frame_layout)
+        
+        # 分隔符1
+        separator1 = QFrame()
+        separator1.setFrameShape(QFrame.VLine)
+        separator1.setFrameShadow(QFrame.Sunken)
+        separator1.setStyleSheet("QFrame { color: rgba(255, 255, 255, 100); }")
+        frame_layout.addWidget(separator1)
+        
+        # 中间 - 系统信息区域
         self.create_info_section(frame_layout)
         
-        # 中间 - 分隔符
-        separator = QFrame()
-        separator.setFrameShape(QFrame.VLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        separator.setStyleSheet("QFrame { color: rgba(255, 255, 255, 100); }")
-        frame_layout.addWidget(separator)
+        # 分隔符2
+        separator2 = QFrame()
+        separator2.setFrameShape(QFrame.VLine)
+        separator2.setFrameShadow(QFrame.Sunken)
+        separator2.setStyleSheet("QFrame { color: rgba(255, 255, 255, 100); }")
+        frame_layout.addWidget(separator2)
         
         # 右侧 - 功能按钮区域
         self.create_buttons_section(frame_layout)
@@ -79,6 +145,164 @@ class DesktopManager(QWidget):
         # 添加背景框架到主布局
         main_layout.addWidget(self.background_frame)
         self.setLayout(main_layout)
+        
+        # 初始化角色显示
+        self.update_role_display()
+        
+    def create_role_section(self, layout):
+        """创建角色信息显示区域"""
+        role_layout = QHBoxLayout()
+        role_layout.setSpacing(10)
+        
+        # 角色头像
+        self.role_avatar_label = QLabel()
+        self.role_avatar_label.setFixedSize(40, 40)
+        self.role_avatar_label.setStyleSheet("""
+            QLabel {
+                border: 2px solid rgba(255, 255, 255, 150);
+                border-radius: 20px;
+                background: rgba(255, 255, 255, 50);
+            }
+        """)
+        self.role_avatar_label.setScaledContents(True)
+        
+        # 角色信息文本区域
+        role_text_layout = QVBoxLayout()
+        role_text_layout.setSpacing(2)
+        role_text_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 角色名称
+        self.role_name_label = QLabel("当前角色")
+        self.role_name_label.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+        self.role_name_label.setStyleSheet("""
+            QLabel {
+                color: #ffffff;
+                background: transparent;
+            }
+        """)
+        
+        # 角色描述
+        self.role_desc_label = QLabel("等待加载...")
+        self.role_desc_label.setFont(QFont("Microsoft YaHei", 8))
+        self.role_desc_label.setStyleSheet("""
+            QLabel {
+                color: #dcdde1;
+                background: transparent;
+            }
+        """)
+        
+        # 添加到文本布局
+        role_text_layout.addWidget(self.role_name_label)
+        role_text_layout.addWidget(self.role_desc_label)
+        
+        # 添加到角色布局
+        role_layout.addWidget(self.role_avatar_label)
+        role_layout.addLayout(role_text_layout)
+        role_layout.addStretch()
+        
+        layout.addLayout(role_layout)
+        
+    def update_role_display(self):
+        """更新角色显示信息"""
+        if not self.current_role_data:
+            # 显示默认信息
+            self.role_name_label.setText("当前角色")
+            self.role_desc_label.setText("等待加载...")
+            # 设置默认头像
+            self.set_default_avatar()
+            return
+            
+        # 获取角色信息
+        selected_role = self.current_role_data.get('selectedRole', {})
+        user_info = self.current_role_data.get('user', {})
+        
+        role_name = selected_role.get('label', '未知角色')
+        role_desc = selected_role.get('description', '无描述')
+        
+        # 更新显示
+        self.role_name_label.setText(role_name)
+        self.role_desc_label.setText(role_desc)
+        
+        # 更新头像
+        self.update_role_avatar(role_name)
+        
+        # 更新状态标签
+        if hasattr(self, 'status_label'):
+            self.status_label.setText(f"当前角色: {role_name}")
+            
+    def update_role_avatar(self, role_name):
+        """更新角色头像"""
+        image_path = self.get_role_image_path(role_name)
+        
+        if image_path and os.path.exists(image_path):
+            try:
+                # 加载图片
+                pixmap = QPixmap(image_path)
+                if not pixmap.isNull():
+                    # 创建圆形头像
+                    rounded_pixmap = self.create_rounded_pixmap(pixmap, 40)
+                    self.role_avatar_label.setPixmap(rounded_pixmap)
+                    print(f"已加载角色头像: {image_path}")
+                else:
+                    print(f"无法加载图片: {image_path}")
+                    self.set_default_avatar()
+            except Exception as e:
+                print(f"设置头像失败: {str(e)}")
+                self.set_default_avatar()
+        else:
+            print(f"未找到角色图片: {image_path}")
+            self.set_default_avatar()
+            
+    def create_rounded_pixmap(self, pixmap, size):
+        """创建圆形图片"""
+        # 缩放图片
+        scaled_pixmap = pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        
+        # 创建圆形遮罩
+        rounded_pixmap = QPixmap(size, size)
+        rounded_pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(rounded_pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # 绘制圆形
+        painter.setBrush(QColor(255, 255, 255))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(0, 0, size, size)
+        
+        # 设置混合模式并绘制图片
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.drawPixmap(0, 0, scaled_pixmap)
+        painter.end()
+        
+        return rounded_pixmap
+        
+    def set_default_avatar(self):
+        """设置默认头像"""
+        # 创建默认头像 - 一个简单的用户图标
+        pixmap = QPixmap(40, 40)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # 绘制背景圆
+        painter.setBrush(QColor(100, 149, 237))  # 蓝色背景
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(0, 0, 40, 40)
+        
+        # 绘制用户图标 (简单的人形)
+        painter.setPen(Qt.white)
+        painter.setBrush(Qt.white)
+        
+        # 头部
+        painter.drawEllipse(15, 8, 10, 10)
+        # 身体
+        painter.drawEllipse(12, 18, 16, 18)
+        
+        painter.end()
+        
+        self.role_avatar_label.setPixmap(pixmap)
         
     def create_info_section(self, layout):
         """创建信息显示区域"""
