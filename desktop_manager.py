@@ -2,10 +2,12 @@ import sys
 import os
 import json
 import subprocess
+import requests
 from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout, 
                              QPushButton, QLabel, QSystemTrayIcon, QMenu, 
-                             QDesktopWidget, QToolButton, QFrame, QSizePolicy)
-from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher
+                             QDesktopWidget, QToolButton, QFrame, QSizePolicy,
+                             QMessageBox)
+from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 import config
 from pet_widget import PetWidget
@@ -13,6 +15,138 @@ from chat_widget import ChatWidget
 from transition_screen import TransitionScreen
 from openai_api import OpenAIChat
 from tuopo_widget import TuopoWidget
+import api_config
+
+class TaskSubmissionWorker(QThread):
+    """任务提交工作线程"""
+    
+    # 定义信号
+    progress_updated = pyqtSignal(str)  # 进度更新信号
+    task_completed = pyqtSignal(str)    # 任务完成信号
+    error_occurred = pyqtSignal(str)    # 错误信号
+    
+    def __init__(self, api_base_url=None):
+        super().__init__()
+        self.api_base_url = api_base_url or api_config.API_BASE_URL
+        self.access_token = None
+        
+    def run(self):
+        """执行任务提交流程"""
+        try:
+            # 步骤1：获取访问令牌（这里需要用户名和密码，实际使用时需要从配置或输入获取）
+            self.progress_updated.emit("正在获取访问令牌...")
+            if not self.authenticate():
+                self.error_occurred.emit("认证失败，请检查用户名和密码")
+                return
+            
+            # 步骤2：获取当前用户的任务
+            self.progress_updated.emit("正在获取任务列表...")
+            tasks = self.get_my_tasks()
+            if not tasks:
+                self.task_completed.emit("没有找到待提交的任务")
+                return
+                
+            # 步骤3：提交任务
+            self.progress_updated.emit(f"找到 {len(tasks)} 个任务，正在提交...")
+            submitted_count = 0
+            
+            for task in tasks:
+                # 只提交状态为"进行中"的任务
+                if task.get('status') == api_config.TASK_STATUS["PENDING"]:
+                    if self.submit_task(task['id']):
+                        submitted_count += 1
+                        self.progress_updated.emit(f"已提交任务: {task.get('task_name', '未命名任务')}")
+                        
+            self.task_completed.emit(f"任务提交完成！共提交了 {submitted_count} 个任务")
+            
+        except Exception as e:
+            self.error_occurred.emit(f"任务提交失败: {str(e)}")
+            
+    def authenticate(self):
+        """用户认证"""
+        try:
+            # 使用配置文件中的认证信息
+            auth_data = {
+                "login_type": api_config.DEFAULT_LOGIN_TYPE,
+                "username": api_config.DEFAULT_USERNAME,
+                "password": api_config.DEFAULT_PASSWORD,
+                "grant_type": "password"
+            }
+            
+            response = requests.post(
+                f"{self.api_base_url}{api_config.API_ENDPOINTS['login']}",
+                data=auth_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                self.access_token = token_data.get("access_token")
+                return True
+            else:
+                print(f"认证失败: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"认证异常: {str(e)}")
+            return False
+            
+    def get_my_tasks(self):
+        """获取当前用户的任务"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(
+                f"{self.api_base_url}{api_config.API_ENDPOINTS['my_tasks']}",
+                headers=headers,
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f"获取任务失败: {response.status_code} - {response.text}")
+                return []
+                
+        except Exception as e:
+            print(f"获取任务异常: {str(e)}")
+            return []
+            
+    def submit_task(self, assignment_id):
+        """提交单个任务"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            # 更新任务状态为"已完成"，进度为100%
+            update_data = {
+                "status": api_config.TASK_STATUS["COMPLETED"],
+                "progress": 100,
+                "comments": "通过桌面管理器自动提交完成"
+            }
+            
+            response = requests.put(
+                f"{self.api_base_url}/api/my-tasks/{assignment_id}",
+                json=update_data,
+                headers=headers,
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                return True
+            else:
+                print(f"提交任务失败: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"提交任务异常: {str(e)}")
+            return False
 
 class DesktopManager(QWidget):
     """桌面管理器 - 在桌面顶部悬浮显示"""
@@ -33,6 +167,7 @@ class DesktopManager(QWidget):
         self.role_name_label = None  # 角色名称标签
         self.role_desc_label = None  # 角色描述标签
         self.file_watcher = None  # 文件监视器
+        self.task_worker = None  # 任务提交工作线程
         self.setup_file_watcher()  # 设置文件监视器
         self.load_role_data()  # 加载角色数据
         self.setup_ui()
@@ -79,7 +214,7 @@ class DesktopManager(QWidget):
         }
         
         image_filename = role_image_mapping.get(role_name, "network_engineer.jpg")  # 默认使用网络工程师图片
-        image_path = os.path.join("image\engineer", image_filename)
+        image_path = os.path.join("image", "engineer", image_filename)
         
         if os.path.exists(image_path):
             return image_path
@@ -361,7 +496,7 @@ class DesktopManager(QWidget):
             ("🐱", "宠物", self.show_pet, "#e74c3c"),
             ("💬", "聊天", self.show_chat, "#2ecc71"),
             ("⚙️", "设置", self.show_settings_action, "#f39c12"),
-            ("🔄", "刷新", self.refresh_system, "#9b59b6"),
+            ("📤", "任务提交", self.submit_tasks, "#9b59b6"),
             ("❌", "退出", self.exit_application, "#95a5a6")
         ]
         
@@ -504,10 +639,54 @@ class DesktopManager(QWidget):
         self.status_label.setText("设置功能开发中...")
         # TODO: 实现设置界面
         
-    def refresh_system(self):
-        """刷新系统状态"""
-        self.status_label.setText("正在刷新...")
-        QTimer.singleShot(1000, lambda: self.status_label.setText("系统运行正常"))
+    def submit_tasks(self):
+        """提交任务"""
+        # 如果已有任务在执行，不允许重复提交
+        if self.task_worker and self.task_worker.isRunning():
+            QMessageBox.information(self, "提示", "任务提交正在进行中，请稍等...")
+            return
+            
+        # 创建任务工作线程
+        self.task_worker = TaskSubmissionWorker()
+        
+        # 连接信号
+        self.task_worker.progress_updated.connect(self.on_task_progress_updated)
+        self.task_worker.task_completed.connect(self.on_task_completed)
+        self.task_worker.error_occurred.connect(self.on_task_error)
+        
+        # 开始任务提交
+        self.status_label.setText("正在准备任务提交...")
+        self.task_worker.start()
+        
+    @pyqtSlot(str)
+    def on_task_progress_updated(self, message):
+        """任务进度更新回调"""
+        self.status_label.setText(message)
+        print(f"任务进度: {message}")
+        
+    @pyqtSlot(str) 
+    def on_task_completed(self, message):
+        """任务完成回调"""
+        self.status_label.setText(message)
+        print(f"任务完成: {message}")
+        
+        # 显示完成对话框
+        QMessageBox.information(self, "任务提交完成", message)
+        
+        # 2秒后恢复状态显示
+        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+        
+    @pyqtSlot(str)
+    def on_task_error(self, error_message):
+        """任务错误回调"""
+        self.status_label.setText(f"任务提交失败")
+        print(f"任务错误: {error_message}")
+        
+        # 显示错误对话框
+        QMessageBox.warning(self, "任务提交失败", error_message)
+        
+        # 2秒后恢复状态显示
+        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
         
     def exit_application(self):
         """退出应用程序并启动全屏浏览器"""
@@ -622,6 +801,11 @@ class DesktopManager(QWidget):
         
     def closeEvent(self, event):
         """关闭事件"""
+        # 清理任务工作线程
+        if self.task_worker and self.task_worker.isRunning():
+            self.task_worker.terminate()
+            self.task_worker.wait()
+            
         # 阻止默认的关闭行为
         event.ignore()
         # 调用退出应用程序方法，显示过渡页面并启动全屏浏览器
