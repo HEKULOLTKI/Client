@@ -94,7 +94,7 @@ class DesktopManager(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         
         # 设置窗口大小 - 增加宽度以容纳角色信息
-        self.setFixedHeight(60)
+        self.setFixedHeight(80)
         self.setMinimumWidth(1000)
         
         # 创建主布局
@@ -156,11 +156,11 @@ class DesktopManager(QWidget):
         
         # 角色头像
         self.role_avatar_label = QLabel()
-        self.role_avatar_label.setFixedSize(40, 40)
+        self.role_avatar_label.setFixedSize(55, 55)
         self.role_avatar_label.setStyleSheet("""
             QLabel {
                 border: 2px solid rgba(255, 255, 255, 150);
-                border-radius: 20px;
+                border-radius: 27px;
                 background: rgba(255, 255, 255, 50);
             }
         """)
@@ -240,7 +240,7 @@ class DesktopManager(QWidget):
                 pixmap = QPixmap(image_path)
                 if not pixmap.isNull():
                     # 创建圆形头像
-                    rounded_pixmap = self.create_rounded_pixmap(pixmap, 40)
+                    rounded_pixmap = self.create_rounded_pixmap(pixmap, 55)
                     self.role_avatar_label.setPixmap(rounded_pixmap)
                     print(f"已加载角色头像: {image_path}")
                 else:
@@ -280,7 +280,7 @@ class DesktopManager(QWidget):
     def set_default_avatar(self):
         """设置默认头像"""
         # 创建默认头像 - 一个简单的用户图标
-        pixmap = QPixmap(40, 40)
+        pixmap = QPixmap(55, 55)
         pixmap.fill(Qt.transparent)
         
         painter = QPainter(pixmap)
@@ -289,16 +289,16 @@ class DesktopManager(QWidget):
         # 绘制背景圆
         painter.setBrush(QColor(100, 149, 237))  # 蓝色背景
         painter.setPen(Qt.NoPen)
-        painter.drawEllipse(0, 0, 40, 40)
+        painter.drawEllipse(0, 0, 55, 55)
         
         # 绘制用户图标 (简单的人形)
         painter.setPen(Qt.white)
         painter.setBrush(Qt.white)
         
         # 头部
-        painter.drawEllipse(15, 8, 10, 10)
+        painter.drawEllipse(20, 12, 15, 15)
         # 身体
-        painter.drawEllipse(12, 18, 16, 18)
+        painter.drawEllipse(16, 27, 23, 23)
         
         painter.end()
         
