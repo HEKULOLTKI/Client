@@ -1,0 +1,19 @@
+{
+  "user": {
+    "id": 6,
+    "username": "user1",
+    "role": "网络工程师",
+    "type": "操作员",
+    "status": "active",
+    "created_at": "2025-06-14T05:31:42",
+    "updated_at": "2025-06-14T05:31:42"
+  },
+  "selectedRole": {
+    "value": "网络工程师",
+    "label": "网络工程师",
+    "description": "负责网络设备配置、监控和故障排除",
+    "icon": "Monitor"
+  },
+  "timestamp": "2025-06-14T07:54:10.197Z",
+  "action": "role_selection"
+}
