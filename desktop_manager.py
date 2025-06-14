@@ -10,7 +10,7 @@ from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 import config
 from pet_widget import PetWidget
 from chat_widget import ChatWidget
-from transition_page import TransitionPage
+from transition_screen import TransitionScreen
 from openai_api import OpenAIChat
 
 class DesktopManager(QWidget):
@@ -509,11 +509,12 @@ class DesktopManager(QWidget):
     def exit_application(self):
         """退出应用程序"""
         if not self.transition_page:
-            self.transition_page = TransitionPage()
-            self.transition_page.transition_completed.connect(self.close_all_and_exit)
-            self.transition_page.force_close.connect(self.close_all_and_exit)
+            self.transition_page = TransitionScreen("正在退出桌面管理器...", 2000)
             
-        self.transition_page.start_transition(2000, "正在退出桌面管理器...")
+        # 显示过渡页面并在完成后关闭
+        self.transition_page.show_transition()
+        # 2秒后关闭应用程序
+        QTimer.singleShot(2000, self.close_all_and_exit)
         
     def close_all_and_exit(self):
         """关闭所有窗口并退出"""

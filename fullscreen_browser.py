@@ -178,11 +178,18 @@ class FullscreenBrowser(QMainWindow):
         
     def _show_transition_screen_async(self):
         """异步显示过渡页面"""
+        # 先启动desktop_manager，确保在显示过渡页面前启动
+        self.start_desktop_manager()
+        
+        # 标记desktop_manager不应该被关闭
+        self.should_close_desktop_manager = False
+        
         # 显示过渡页面并开始动画
         self.transition_screen.show_transition()
-        # 过渡完成后关闭程序
-        QTimer.singleShot(100, self._close_application)
         
+        # 过渡完成后关闭程序（过渡页面会自动关闭）
+        self.close()
+    
     def _close_fullscreen_impl(self):
         """实际执行关闭全屏的操作 - 改为直接关闭程序"""
         print("正在关闭网页程序...")
@@ -198,10 +205,8 @@ class FullscreenBrowser(QMainWindow):
         """关闭应用程序"""
         print("正在关闭应用程序...")
         
-        # 启动desktop_manager
-        self.start_desktop_manager()
-        
-        # 标记desktop_manager不应该被关闭
+        # desktop_manager已经在过渡页面前启动，这里不需要再启动
+        # 只需要标记desktop_manager不应该被关闭
         self.should_close_desktop_manager = False
         
         # 关闭当前应用程序
@@ -269,8 +274,9 @@ class FullscreenBrowser(QMainWindow):
         """异步显示退出过渡页面"""
         # 显示过渡页面并开始动画
         self.transition_screen.show_transition()
-        # 过渡完成后退出程序
-        QTimer.singleShot(100, self._exit_application)
+        
+        # 过渡完成后退出程序（过渡页面会自动关闭）
+        self._exit_application()
         
     def start_desktop_manager(self):
         """启动desktop_manager程序"""
