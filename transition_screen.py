@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QProgressBar, 
                             QHBoxLayout, QWidget)
-from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QRect, QRectF, QEasingCurve, QSize, pyqtProperty
+from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QRect, QRectF, QEasingCurve, QSize, pyqtProperty, pyqtSignal
 from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QLinearGradient, QFont, QPainterPath
 import random
 import math
@@ -246,6 +246,9 @@ class GlowingBarWidget(QWidget):
         self.timer.stop()
 
 class TransitionScreen(QDialog):
+    # 添加完成信号
+    finished = pyqtSignal()
+    
     def __init__(self, message="正在加载，请稍候...", duration=2000):
         """
         创建高级科技感过渡界面
@@ -364,10 +367,10 @@ class TransitionScreen(QDialog):
         
         # 进度信息
         self.progress_texts = [
-            "正在连接服务器...",
-            "正在初始化界面...",
-            "正在加载用户配置...",
-            "准备完毕，即将启动..."
+            "正在关闭全屏网页...",
+            "正在清理浏览器资源...",
+            "正在准备桌面管理器...",
+            "即将启动桌面管理器..."
         ]
         
         # 创建更新二进制码的计时器
@@ -381,7 +384,7 @@ class TransitionScreen(QDialog):
         # 创建自动关闭计时器
         self.close_timer = QTimer(self)
         self.close_timer.setSingleShot(True)
-        self.close_timer.timeout.connect(self.accept)
+        self.close_timer.timeout.connect(self._on_close_timeout)
         
         # 为标题创建闪烁效果
         self.glow_timer = QTimer(self)
@@ -486,9 +489,9 @@ class TransitionScreen(QDialog):
         # 设置自动关闭计时器
         self.close_timer.start(duration)
         
-        # 显示对话框
+        # 显示对话框（非阻塞）
         self.showFullScreen()
-        self.exec_()
+        self.show()
     
     def paintEvent(self, event):
         """自定义绘制，添加简单的装饰效果"""
@@ -516,6 +519,12 @@ class TransitionScreen(QDialog):
         # 右下角
         painter.drawLine(self.width() - 50, self.height() - 20, self.width() - 20, self.height() - 20)
         painter.drawLine(self.width() - 20, self.height() - 50, self.width() - 20, self.height() - 20)
+    
+    def _on_close_timeout(self):
+        """计时器超时回调，发出完成信号并关闭对话框"""
+        print("过渡页面计时器超时，准备关闭...")
+        self.finished.emit()  # 发出完成信号
+        self.close()  # 关闭对话框
     
     def closeEvent(self, event):
         """关闭事件处理"""

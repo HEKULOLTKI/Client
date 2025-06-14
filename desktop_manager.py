@@ -12,18 +12,19 @@ from pet_widget import PetWidget
 from chat_widget import ChatWidget
 from transition_screen import TransitionScreen
 from openai_api import OpenAIChat
+from tuopo_widget import TuopoWidget
 
 class DesktopManager(QWidget):
     """桌面管理器 - 在桌面顶部悬浮显示"""
     
     # 定义信号
-    launch_browser = pyqtSignal()
     show_settings = pyqtSignal()
     
     def __init__(self):
         super().__init__()
         self.pet_widget = None
         self.chat_widget = None
+        self.tuopo_widget = None  # 添加拓扑图窗口实例
         self.transition_page = None
         self.openai_chat = None  # 添加OpenAI聊天实例
         self.is_expanded = False
@@ -78,13 +79,13 @@ class DesktopManager(QWidget):
         }
         
         image_filename = role_image_mapping.get(role_name, "network_engineer.jpg")  # 默认使用网络工程师图片
-        image_path = os.path.join("image", image_filename)
+        image_path = os.path.join("image\engineer", image_filename)
         
         if os.path.exists(image_path):
             return image_path
         else:
             # 如果找不到对应图片，尝试使用默认图片
-            default_path = os.path.join("image", "network_engineer.jpg")
+            default_path = os.path.join("image", "engineer", "network_engineer.jpg")
             return default_path if os.path.exists(default_path) else None
         
     def setup_ui(self):
@@ -356,7 +357,7 @@ class DesktopManager(QWidget):
         
         # 按钮配置
         buttons_config = [
-            ("🌐", "浏览器", self.launch_browser_action, "#3498db"),
+            ("🗺️", "拓扑图", self.show_tuopo, "#3498db"),
             ("🐱", "宠物", self.show_pet, "#e74c3c"),
             ("💬", "聊天", self.show_chat, "#2ecc71"),
             ("⚙️", "设置", self.show_settings_action, "#f39c12"),
@@ -457,15 +458,17 @@ class DesktopManager(QWidget):
         date_text = current_date.strftime("%Y年%m月%d日")
         self.date_label.setText(date_text)
         
-    def launch_browser_action(self):
-        """启动浏览器"""
-        try:
-            self.status_label.setText("正在启动浏览器...")
-            # 启动全屏浏览器
-            subprocess.Popen([sys.executable, "fullscreen_browser.py"])
-            self.status_label.setText("浏览器已启动")
-        except Exception as e:
-            self.status_label.setText(f"启动失败: {str(e)}")
+    def show_tuopo(self):
+        """显示/隐藏拓扑图"""
+        if not self.tuopo_widget:
+            self.tuopo_widget = TuopoWidget()
+            
+        if self.tuopo_widget.isVisible():
+            self.tuopo_widget.hide()
+            self.status_label.setText("拓扑图已隐藏")
+        else:
+            self.tuopo_widget.show()
+            self.status_label.setText("拓扑图已显示")
             
     def show_pet(self):
         """显示/隐藏宠物"""
@@ -507,27 +510,84 @@ class DesktopManager(QWidget):
         QTimer.singleShot(1000, lambda: self.status_label.setText("系统运行正常"))
         
     def exit_application(self):
-        """退出应用程序"""
-        if not self.transition_page:
-            self.transition_page = TransitionScreen("正在退出桌面管理器...", 2000)
-            
-        # 显示过渡页面并在完成后关闭
-        self.transition_page.show_transition()
-        # 2秒后关闭应用程序
-        QTimer.singleShot(2000, self.close_all_and_exit)
+        """退出应用程序并启动全屏浏览器"""
+        print("开始退出desktop_manager应用...")
         
-    def close_all_and_exit(self):
-        """关闭所有窗口并退出"""
+        # 步骤1：清理资源 - 关闭所有子窗口
+        self.close_all_windows()
+        
+        # 步骤2：启动独立过渡页面，然后启动全屏浏览器
+        self.start_independent_transition_and_browser()
+        
+        # 步骤3：退出desktop_manager应用
+        QTimer.singleShot(100, QApplication.quit)
+        
+    def close_all_windows(self):
+        """关闭所有子窗口"""
+        print("正在清理资源和关闭所有子窗口...")
+        
         # 关闭所有子窗口
         if self.pet_widget:
             self.pet_widget.close()
+            print("宠物窗口已关闭")
         if self.chat_widget:
             self.chat_widget.close()
+            print("聊天窗口已关闭")
+        if self.tuopo_widget:
+            self.tuopo_widget.close()
+            print("拓扑图窗口已关闭")
         if self.transition_page:
             self.transition_page.close()
+            print("过渡页面已关闭")
             
-        # 退出应用程序
-        QApplication.quit()
+        print("所有子窗口清理完成")
+        
+    def start_independent_transition_and_browser(self):
+        """启动独立过渡页面，然后启动全屏浏览器"""
+        try:
+            # 查找独立过渡页面脚本
+            script_path = os.path.join(os.path.dirname(__file__), "independent_transition.py")
+            if not os.path.exists(script_path):
+                script_path = "independent_transition.py"
+            
+            if not os.path.exists(script_path):
+                print("警告：找不到independent_transition.py，直接启动全屏浏览器")
+                self.launch_fullscreen_browser_directly()
+                return
+            
+            # 启动独立过渡页面进程
+            # 传递参数：信息文本、持续时间、启动浏览器标志
+            subprocess.Popen([
+                sys.executable, 
+                script_path,
+                "正在切换到全屏网页...",
+                "3000",
+                "--launch-browser"
+            ])
+            print("独立过渡页面已启动，将在3秒后启动全屏浏览器")
+            
+        except Exception as e:
+            print(f"启动独立过渡页面失败: {str(e)}")
+            print("回退到直接启动全屏浏览器")
+            self.launch_fullscreen_browser_directly()
+    
+    def launch_fullscreen_browser_directly(self):
+        """直接启动全屏浏览器（备用方案）"""
+        try:
+            subprocess.Popen([sys.executable, "fullscreen_browser.py"])
+            print("全屏浏览器已直接启动")
+        except Exception as e:
+            print(f"启动全屏浏览器失败: {str(e)}")
+        
+    def launch_fullscreen_and_exit(self):
+        """启动全屏浏览器并关闭桌面管理器 - 已弃用，保留兼容性"""
+        print("注意：launch_fullscreen_and_exit方法已弃用，请使用新的退出流程")
+        self.exit_application()
+        
+    def close_all_and_exit(self):
+        """关闭所有窗口并退出 - 已弃用，保留兼容性"""
+        print("注意：close_all_and_exit方法已弃用，请使用新的退出流程")
+        self.exit_application()
         
     def mousePressEvent(self, event):
         """鼠标按下事件 - 支持拖拽"""
@@ -557,13 +617,15 @@ class DesktopManager(QWidget):
         elif event.key() == Qt.Key_F2:
             self.show_chat()
         elif event.key() == Qt.Key_F3:
-            self.launch_browser_action()
+            self.show_tuopo()
         super().keyPressEvent(event)
         
     def closeEvent(self, event):
         """关闭事件"""
-        self.close_all_and_exit()
-        event.accept()
+        # 阻止默认的关闭行为
+        event.ignore()
+        # 调用退出应用程序方法，显示过渡页面并启动全屏浏览器
+        self.exit_application()
 
 
 def main():

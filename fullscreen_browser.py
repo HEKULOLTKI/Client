@@ -171,24 +171,67 @@ class FullscreenBrowser(QMainWindow):
         self.hide()
         
         # 创建新的过渡页面实例
-        self.transition_screen = TransitionScreen("正在关闭网页...", 3000)
+        self.transition_screen = TransitionScreen("正在关闭网页，准备启动桌面管理器...", 3000)
         
         # 使用QTimer异步显示过渡页面，避免阻塞
         QTimer.singleShot(0, self._show_transition_screen_async)
         
     def _show_transition_screen_async(self):
         """异步显示过渡页面"""
-        # 先启动desktop_manager，确保在显示过渡页面前启动
-        self.start_desktop_manager()
+        # 启动独立的过渡页面进程
+        self._start_independent_transition()
         
-        # 标记desktop_manager不应该被关闭
-        self.should_close_desktop_manager = False
+        # 立即关闭当前浏览器应用
+        print("独立过渡页面已启动，正在关闭浏览器应用...")
+        self.should_close_desktop_manager = False  # 不关闭desktop_manager，因为还没启动
+        QTimer.singleShot(100, self.close)  # 延迟100ms关闭浏览器应用
         
-        # 显示过渡页面并开始动画
-        self.transition_screen.show_transition()
-        
-        # 过渡完成后关闭程序（过渡页面会自动关闭）
-        self.close()
+    def _start_independent_transition(self):
+        """启动独立的过渡页面进程"""
+        try:
+            # 准备启动独立过渡页面的参数
+            message = "正在关闭网页，准备启动桌面管理器..."
+            duration = "3000"
+            
+            # 查找独立过渡页面脚本
+            script_path = os.path.join(os.path.dirname(__file__), "independent_transition.py")
+            if not os.path.exists(script_path):
+                script_path = "independent_transition.py"
+            
+            if not os.path.exists(script_path):
+                print("错误：找不到 independent_transition.py 文件")
+                return
+            
+            # 启动独立过渡页面进程
+            if sys.platform == "win32":
+                # Windows平台使用pythonw运行，不显示终端窗口
+                python_executable = sys.executable.replace('python.exe', 'pythonw.exe')
+                if not os.path.exists(python_executable):
+                    python_executable = sys.executable
+                    creationflags = subprocess.CREATE_NO_WINDOW
+                else:
+                    creationflags = 0
+                
+                subprocess.Popen([
+                    python_executable, script_path, message, duration
+                ], creationflags=creationflags)
+            else:
+                # 非Windows平台
+                subprocess.Popen([
+                    sys.executable, script_path, message, duration
+                ])
+            
+            print("独立过渡页面进程已启动")
+            
+        except Exception as e:
+            print(f"启动独立过渡页面时出错: {str(e)}")
+            # 如果启动失败，直接启动desktop_manager
+            self.start_desktop_manager()
+    
+    def _on_transition_finished(self):
+        """过渡页面完成后的回调（现在不再使用）"""
+        # 这个方法现在不再使用，因为过渡页面是独立运行的
+        pass
     
     def _close_fullscreen_impl(self):
         """实际执行关闭全屏的操作 - 改为直接关闭程序"""
@@ -272,11 +315,58 @@ class FullscreenBrowser(QMainWindow):
         
     def _show_exit_transition_async(self):
         """异步显示退出过渡页面"""
-        # 显示过渡页面并开始动画
-        self.transition_screen.show_transition()
+        # 启动独立的退出过渡页面进程
+        self._start_independent_exit_transition()
         
-        # 过渡完成后退出程序（过渡页面会自动关闭）
-        self._exit_application()
+        # 立即关闭当前浏览器应用
+        print("独立退出过渡页面已启动，正在关闭浏览器应用...")
+        self.should_close_desktop_manager = True  # 退出时允许关闭已有的desktop_manager
+        QTimer.singleShot(100, self.close)  # 延迟100ms关闭浏览器应用
+        
+    def _start_independent_exit_transition(self):
+        """启动独立的退出过渡页面进程"""
+        try:
+            # 准备启动独立过渡页面的参数
+            message = "正在退出程序..."
+            duration = "2000"
+            
+            # 查找独立过渡页面脚本
+            script_path = os.path.join(os.path.dirname(__file__), "independent_transition.py")
+            if not os.path.exists(script_path):
+                script_path = "independent_transition.py"
+            
+            if not os.path.exists(script_path):
+                print("错误：找不到 independent_transition.py 文件")
+                return
+            
+            # 启动独立过渡页面进程（退出模式不启动desktop_manager）
+            if sys.platform == "win32":
+                # Windows平台使用pythonw运行，不显示终端窗口
+                python_executable = sys.executable.replace('python.exe', 'pythonw.exe')
+                if not os.path.exists(python_executable):
+                    python_executable = sys.executable
+                    creationflags = subprocess.CREATE_NO_WINDOW
+                else:
+                    creationflags = 0
+                
+                subprocess.Popen([
+                    python_executable, script_path, message, duration, "--exit-mode"
+                ], creationflags=creationflags)
+            else:
+                # 非Windows平台
+                subprocess.Popen([
+                    sys.executable, script_path, message, duration, "--exit-mode"
+                ])
+            
+            print("独立退出过渡页面进程已启动")
+            
+        except Exception as e:
+            print(f"启动独立退出过渡页面时出错: {str(e)}")
+    
+    def _on_exit_transition_finished(self):
+        """退出过渡页面完成后的回调（现在不再使用）"""
+        # 这个方法现在不再使用，因为过渡页面是独立运行的
+        pass
         
     def start_desktop_manager(self):
         """启动desktop_manager程序"""
