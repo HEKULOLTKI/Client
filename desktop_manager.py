@@ -2394,19 +2394,36 @@ class DesktopManager(QWidget):
         print("所有子窗口清理完成")
         
     def start_independent_transition_and_browser(self):
-        """启动独立过渡页面，然后启动全屏浏览器"""
+        """启动增强过渡页面（包含桌面图标还原），然后启动全屏浏览器"""
         try:
-            # 查找独立过渡页面脚本
+            # 优先查找增强过渡页面脚本
+            enhanced_script_path = os.path.join(os.path.dirname(__file__), "enhanced_transition_screen.py")
+            if not os.path.exists(enhanced_script_path):
+                enhanced_script_path = "enhanced_transition_screen.py"
+            
+            if os.path.exists(enhanced_script_path):
+                # 启动增强过渡页面进程（包含桌面图标还原）
+                subprocess.Popen([
+                    sys.executable, 
+                    enhanced_script_path,
+                    "正在还原桌面图标，准备启动全屏网页...",
+                    "5000",  # 增加持续时间，因为需要执行图标还原
+                    "--restore"
+                ])
+                print("增强过渡页面已启动，将执行桌面图标还原并启动全屏浏览器")
+                return
+            
+            # 备用：查找原始过渡页面脚本
             script_path = os.path.join(os.path.dirname(__file__), "independent_transition.py")
             if not os.path.exists(script_path):
                 script_path = "independent_transition.py"
             
             if not os.path.exists(script_path):
-                print("警告：找不到independent_transition.py，直接启动全屏浏览器")
+                print("警告：找不到任何过渡页面脚本，直接启动全屏浏览器")
                 self.launch_fullscreen_browser_directly()
                 return
             
-            # 启动独立过渡页面进程
+            # 启动原始过渡页面进程
             # 传递参数：信息文本、持续时间、启动浏览器标志
             subprocess.Popen([
                 sys.executable, 
@@ -2415,10 +2432,10 @@ class DesktopManager(QWidget):
                 "3000",
                 "--launch-browser"
             ])
-            print("独立过渡页面已启动，将在3秒后启动全屏浏览器")
+            print("备用过渡页面已启动，将在3秒后启动全屏浏览器")
             
         except Exception as e:
-            print(f"启动独立过渡页面失败: {str(e)}")
+            print(f"启动过渡页面失败: {str(e)}")
             print("回退到直接启动全屏浏览器")
             self.launch_fullscreen_browser_directly()
     

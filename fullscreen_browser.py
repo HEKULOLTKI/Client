@@ -170,8 +170,8 @@ class FullscreenBrowser(QMainWindow):
         # 先隐藏当前全屏浏览器窗口
         self.hide()
         
-        # 创建新的过渡页面实例
-        self.transition_screen = TransitionScreen("正在关闭网页，准备启动桌面管理器...", 3000)
+        # 创建新的过渡页面实例（不再使用，改为独立过渡）
+        # self.transition_screen = TransitionScreen("正在关闭网页，准备启动桌面管理器...", 3000)
         
         # 使用QTimer异步显示过渡页面，避免阻塞
         QTimer.singleShot(0, self._show_transition_screen_async)
@@ -187,22 +187,50 @@ class FullscreenBrowser(QMainWindow):
         QTimer.singleShot(100, self.close)  # 延迟100ms关闭浏览器应用
         
     def _start_independent_transition(self):
-        """启动独立的过渡页面进程"""
+        """启动独立的过渡页面进程（包含桌面图标备份）"""
         try:
-            # 准备启动独立过渡页面的参数
-            message = "正在关闭网页，准备启动桌面管理器..."
-            duration = "3000"
+            # 准备启动增强过渡页面的参数
+            message = "正在备份桌面图标，准备启动桌面管理器..."
+            duration = "5000"  # 增加持续时间，因为需要执行图标备份
             
-            # 查找独立过渡页面脚本
-            script_path = os.path.join(os.path.dirname(__file__), "independent_transition.py")
+            # 查找增强过渡页面脚本
+            script_path = os.path.join(os.path.dirname(__file__), "enhanced_transition_screen.py")
             if not os.path.exists(script_path):
-                script_path = "independent_transition.py"
+                script_path = "enhanced_transition_screen.py"
             
             if not os.path.exists(script_path):
-                print("错误：找不到 independent_transition.py 文件")
+                print("错误：找不到 enhanced_transition_screen.py 文件，使用备用方案")
+                # 使用原始过渡页面作为备用
+                script_path = os.path.join(os.path.dirname(__file__), "independent_transition.py")
+                if not os.path.exists(script_path):
+                    script_path = "independent_transition.py"
+                
+                if not os.path.exists(script_path):
+                    print("错误：找不到任何过渡页面文件")
+                    self.start_desktop_manager()
+                    return
+                
+                # 使用原始过渡页面
+                if sys.platform == "win32":
+                    python_executable = sys.executable.replace('python.exe', 'pythonw.exe')
+                    if not os.path.exists(python_executable):
+                        python_executable = sys.executable
+                        creationflags = subprocess.CREATE_NO_WINDOW
+                    else:
+                        creationflags = 0
+                    
+                    subprocess.Popen([
+                        python_executable, script_path, message, duration
+                    ], creationflags=creationflags)
+                else:
+                    subprocess.Popen([
+                        sys.executable, script_path, message, duration
+                    ])
+                
+                print("启动了备用过渡页面进程")
                 return
             
-            # 启动独立过渡页面进程
+            # 启动增强过渡页面进程（包含桌面图标备份）
             if sys.platform == "win32":
                 # Windows平台使用pythonw运行，不显示终端窗口
                 python_executable = sys.executable.replace('python.exe', 'pythonw.exe')
@@ -213,18 +241,18 @@ class FullscreenBrowser(QMainWindow):
                     creationflags = 0
                 
                 subprocess.Popen([
-                    python_executable, script_path, message, duration
+                    python_executable, script_path, message, duration, "--backup"
                 ], creationflags=creationflags)
             else:
                 # 非Windows平台
                 subprocess.Popen([
-                    sys.executable, script_path, message, duration
+                    sys.executable, script_path, message, duration, "--backup"
                 ])
             
-            print("独立过渡页面进程已启动")
+            print("增强过渡页面进程已启动，将执行桌面图标备份")
             
         except Exception as e:
-            print(f"启动独立过渡页面时出错: {str(e)}")
+            print(f"启动增强过渡页面时出错: {str(e)}")
             # 如果启动失败，直接启动desktop_manager
             self.start_desktop_manager()
     
