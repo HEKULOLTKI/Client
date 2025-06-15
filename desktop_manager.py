@@ -7,7 +7,8 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout,
                              QPushButton, QLabel, QSystemTrayIcon, QMenu, 
                              QDesktopWidget, QToolButton, QFrame, QSizePolicy,
                              QMessageBox, QDialog, QCheckBox, QScrollArea, 
-                             QDialogButtonBox)
+                             QDialogButtonBox, QLineEdit, QComboBox, QFormLayout,
+                             QTextEdit)
 from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 import config
@@ -482,6 +483,347 @@ class TaskListWorker(QThread):
             return []
 
 
+class DeviceAddDialog(QDialog):
+    """设备添加对话框"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.device_data = {}
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """设置界面"""
+        self.setWindowTitle("添加设备")
+        self.setFixedSize(700, 550)
+        self.setModal(True)
+        
+        # 设置对话框背景样式
+        self.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f8f9fa, stop:1 #e9ecef);
+                border-radius: 10px;
+            }
+        """)
+        
+        # 主布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 30, 30, 20)
+        layout.setSpacing(15)
+        
+
+        
+        # 表单容器
+        form_frame = QFrame()
+        form_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 8px;
+                border: 1px solid #dee2e6;
+            }
+        """)
+        form_layout = QFormLayout(form_frame)
+        form_layout.setContentsMargins(30, 25, 30, 25)
+        form_layout.setVerticalSpacing(25)
+        form_layout.setHorizontalSpacing(20)
+        
+        # 通用输入框样式
+        input_style = """
+            QLineEdit {
+                padding: 15px 18px;
+                border: 2px solid #e9ecef;
+                border-radius: 8px;
+                font-size: 16px;
+                font-family: '微软雅黑';
+                background-color: #ffffff;
+                color: #495057;
+                min-height: 20px;
+            }
+            QLineEdit:focus {
+                border-color: #667eea;
+                background-color: #f8f9ff;
+            }
+            QLineEdit:hover {
+                border-color: #adb5bd;
+            }
+        """
+        
+        # 标签样式
+        label_style = """
+            QLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #495057;
+                font-family: '微软雅黑';
+            }
+        """
+        
+        # 设备名称（必填）
+        name_label = QLabel("设备名称*")
+        name_label.setStyleSheet(label_style)
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("请输入设备名称，例如：核心交换机01")
+        self.name_edit.setStyleSheet(input_style)
+        form_layout.addRow(name_label, self.name_edit)
+        
+        # 设备类型（改为输入框）
+        type_label = QLabel("设备类型")
+        type_label.setStyleSheet(label_style)
+        self.type_edit = QLineEdit()
+        self.type_edit.setPlaceholderText("请输入设备类型，例如：路由器、交换机、防火墙等")
+        self.type_edit.setStyleSheet(input_style)
+        form_layout.addRow(type_label, self.type_edit)
+        
+        # IP地址
+        ip_label = QLabel("IP地址")
+        ip_label.setStyleSheet(label_style)
+        self.ip_edit = QLineEdit()
+        self.ip_edit.setPlaceholderText("请输入IP地址，例如：192.168.1.100")
+        self.ip_edit.setStyleSheet(input_style)
+        form_layout.addRow(ip_label, self.ip_edit)
+        
+        # 设备位置
+        location_label = QLabel("设备位置")
+        location_label.setStyleSheet(label_style)
+        self.location_edit = QLineEdit()
+        self.location_edit.setPlaceholderText("请输入设备位置，例如：机房A-机柜01-U10")
+        self.location_edit.setStyleSheet(input_style)
+        form_layout.addRow(location_label, self.location_edit)
+        
+        # 设备状态
+        status_label = QLabel("设备状态")
+        status_label.setStyleSheet(label_style)
+        self.status_combo = QComboBox()
+        self.status_combo.addItems(["offline", "online", "maintenance"])
+        self.status_combo.setCurrentText("offline")
+        self.status_combo.setStyleSheet("""
+            QComboBox {
+                padding: 15px 18px;
+                border: 2px solid #e9ecef;
+                border-radius: 8px;
+                font-size: 16px;
+                font-family: '微软雅黑';
+                background-color: #ffffff;
+                color: #495057;
+                selection-background-color: #667eea;
+                min-height: 20px;
+            }
+            QComboBox:focus {
+                border-color: #667eea;
+                background-color: #f8f9ff;
+            }
+            QComboBox:hover {
+                border-color: #adb5bd;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 25px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 6px solid transparent;
+                border-right: 6px solid transparent;
+                border-top: 6px solid #667eea;
+                margin-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                font-size: 16px;
+                font-family: '微软雅黑';
+                selection-background-color: #667eea;
+            }
+        """)
+        form_layout.addRow(status_label, self.status_combo)
+        
+        layout.addWidget(form_frame)
+        layout.addStretch()
+        
+        # 按钮区域
+        button_frame = QFrame()
+        button_frame.setStyleSheet("""
+            QFrame {
+                background: transparent;
+                border: none;
+            }
+        """)
+        button_layout = QHBoxLayout(button_frame)
+        button_layout.setContentsMargins(0, 20, 0, 10)
+        
+        # 取消按钮
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedSize(130, 55)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: #ffffff;
+                color: #6c757d;
+                border: 2px solid #dee2e6;
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: #f8f9fa;
+                border-color: #adb5bd;
+                color: #495057;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(108, 117, 125, 0.15);
+            }
+            QPushButton:pressed {
+                background: #e9ecef;
+                transform: translateY(0px);
+                box-shadow: 0 2px 4px rgba(108, 117, 125, 0.1);
+            }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        
+        # 添加设备按钮
+        add_btn = QPushButton("🚀 添加设备")
+        add_btn.setFixedSize(150, 55)
+        add_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #667eea, stop:0.5 #764ba2, stop:1 #f093fb);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #5a6fd8, stop:0.5 #6a4190, stop:1 #e084e9);
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #5865c6, stop:0.5 #5e3d7e, stop:1 #d275d7);
+                transform: translateY(0px);
+                box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+            }
+        """)
+        add_btn.clicked.connect(self.accept_device)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_btn)
+        button_layout.addSpacing(20)
+        button_layout.addWidget(add_btn)
+        
+        layout.addWidget(button_frame)
+        
+    def accept_device(self):
+        """确认添加设备"""
+        # 验证必填字段
+        if not self.name_edit.text().strip():
+            QMessageBox.warning(self, "提示", "设备名称不能为空！")
+            return
+            
+        # 收集设备数据
+        self.device_data = {
+            "name": self.name_edit.text().strip(),
+            "type": self.type_edit.text().strip() if self.type_edit.text().strip() else None,
+            "ip": self.ip_edit.text().strip() if self.ip_edit.text().strip() else None,
+            "location": self.location_edit.text().strip() if self.location_edit.text().strip() else None,
+            "status": self.status_combo.currentText()
+        }
+        
+        self.accept()
+        
+    def get_device_data(self):
+        """获取设备数据"""
+        return self.device_data
+
+
+class DeviceAddWorker(QThread):
+    """设备添加工作线程"""
+    
+    # 定义信号
+    progress_updated = pyqtSignal(str)  # 进度更新信号
+    device_added = pyqtSignal(str)      # 设备添加完成信号
+    error_occurred = pyqtSignal(str)    # 错误信号
+    
+    def __init__(self, device_data=None, api_base_url=None):
+        super().__init__()
+        self.device_data = device_data or {}
+        self.api_base_url = api_base_url or api_config.API_BASE_URL
+        self.access_token = None
+        
+    def run(self):
+        """执行设备添加流程"""
+        try:
+            # 步骤1：获取访问令牌
+            self.progress_updated.emit("正在获取访问令牌...")
+            if not self.authenticate():
+                self.error_occurred.emit("认证失败，请检查管理员账号配置")
+                return
+            
+            # 步骤2：添加设备
+            self.progress_updated.emit("正在添加设备...")
+            if self.add_device():
+                self.device_added.emit(f"设备 '{self.device_data.get('name', '未知')}' 添加成功！")
+            else:
+                self.error_occurred.emit("设备添加失败，请检查服务器连接")
+                
+        except Exception as e:
+            self.error_occurred.emit(f"设备添加失败: {str(e)}")
+            
+    def authenticate(self):
+        """管理员认证（使用admin账号）"""
+        try:
+            # 使用admin账号进行认证
+            auth_data = {
+                "login_type": "管理员",  # 使用管理员登录类型
+                "username": "admin",     # 强制使用admin用户名
+                "password": api_config.DEFAULT_PASSWORD,
+                "grant_type": "password"
+            }
+            
+            response = requests.post(
+                f"{self.api_base_url}{api_config.API_ENDPOINTS['login']}",
+                data=auth_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                self.access_token = token_data.get("access_token")
+                return True
+            else:
+                print(f"管理员认证失败: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"管理员认证异常: {str(e)}")
+            return False
+            
+    def add_device(self):
+        """添加设备"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(
+                f"{self.api_base_url}{api_config.API_ENDPOINTS['create_device']}",
+                json=self.device_data,
+                headers=headers,
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                return True
+            else:
+                print(f"添加设备失败: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"添加设备异常: {str(e)}")
+            return False
+
+
 class DesktopManager(QWidget):
     """桌面管理器 - 在桌面顶部悬浮显示"""
     
@@ -503,6 +845,7 @@ class DesktopManager(QWidget):
         self.file_watcher = None  # 文件监视器
         self.task_worker = None  # 任务提交工作线程
         self.task_list_worker = None  # 任务列表获取工作线程
+        self.device_worker = None  # 设备添加工作线程
         self.setup_file_watcher()  # 设置文件监视器
         self.load_role_data()  # 加载角色数据
         self.setup_ui()
@@ -832,6 +1175,7 @@ class DesktopManager(QWidget):
             ("💬", "聊天", self.show_chat, "#2ecc71"),
             ("⚙️", "设置", self.show_settings_action, "#f39c12"),
             ("📤", "任务列表", self.submit_tasks, "#9b59b6"),
+            ("🖥️", "添加设备", self.add_device, "#34495e"),
             ("❌", "退出", self.exit_application, "#95a5a6")
         ]
         
@@ -973,6 +1317,64 @@ class DesktopManager(QWidget):
         """显示设置"""
         self.status_label.setText("设置功能开发中...")
         # TODO: 实现设置界面
+        
+    def add_device(self):
+        """添加设备"""
+        # 检查是否有设备添加操作正在进行
+        if self.device_worker and self.device_worker.isRunning():
+            QMessageBox.information(self, "提示", "设备添加正在进行中，请稍等...")
+            return
+            
+        # 显示设备添加对话框
+        dialog = DeviceAddDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            device_data = dialog.get_device_data()
+            if device_data:
+                self.start_device_addition(device_data)
+                
+    def start_device_addition(self, device_data):
+        """开始设备添加流程"""
+        # 创建设备添加工作线程
+        self.device_worker = DeviceAddWorker(device_data)
+        
+        # 连接信号
+        self.device_worker.progress_updated.connect(self.on_device_progress_updated)
+        self.device_worker.device_added.connect(self.on_device_added)
+        self.device_worker.error_occurred.connect(self.on_device_error)
+        
+        # 开始设备添加
+        self.status_label.setText("正在准备添加设备...")
+        self.device_worker.start()
+        
+    @pyqtSlot(str)
+    def on_device_progress_updated(self, message):
+        """设备添加进度更新回调"""
+        self.status_label.setText(message)
+        print(f"设备添加进度: {message}")
+        
+    @pyqtSlot(str) 
+    def on_device_added(self, message):
+        """设备添加完成回调"""
+        self.status_label.setText("设备添加成功")
+        print(f"设备添加完成: {message}")
+        
+        # 显示完成对话框
+        QMessageBox.information(self, "设备添加成功", message)
+        
+        # 2秒后恢复状态显示
+        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+        
+    @pyqtSlot(str)
+    def on_device_error(self, error_message):
+        """设备添加错误回调"""
+        self.status_label.setText("设备添加失败")
+        print(f"设备添加错误: {error_message}")
+        
+        # 显示错误对话框
+        QMessageBox.warning(self, "设备添加失败", error_message)
+        
+        # 2秒后恢复状态显示
+        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
         
     def submit_tasks(self):
         """打开任务选择对话框"""
@@ -1194,6 +1596,11 @@ class DesktopManager(QWidget):
         if self.task_list_worker and self.task_list_worker.isRunning():
             self.task_list_worker.terminate()
             self.task_list_worker.wait()
+            
+        # 清理设备工作线程
+        if self.device_worker and self.device_worker.isRunning():
+            self.device_worker.terminate()
+            self.device_worker.wait()
             
         # 阻止默认的关闭行为
         event.ignore()

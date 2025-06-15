@@ -704,7 +704,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/TaskResponse"
+                    "$ref": "#/components/schemas/Task"
                   },
                   "title": "Response Get Tasks Api Tasks Get"
                 }
@@ -751,7 +751,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskResponse"
+                  "$ref": "#/components/schemas/Task"
                 }
               }
             }
@@ -930,7 +930,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskResponse"
+                  "$ref": "#/components/schemas/Task"
                 }
               }
             }
@@ -992,6 +992,53 @@
             }
           }
         }
+      }
+    },
+    "/api/tasks/bulk-import": {
+      "post": {
+        "tags": [
+          "任务管理"
+        ],
+        "summary": "Bulk Import Tasks",
+        "description": "批量导入任务（管理员权限）",
+        "operationId": "bulk_import_tasks_api_tasks_bulk_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_bulk_import_tasks_api_tasks_bulk_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskBulkImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/task-assignments": {
@@ -2339,6 +2386,20 @@
   },
   "components": {
     "schemas": {
+      "Body_bulk_import_tasks_api_tasks_bulk_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_bulk_import_tasks_api_tasks_bulk_import_post"
+      },
       "Body_bulk_import_users_api_users_bulk_import_post": {
         "properties": {
           "file": {
@@ -2762,6 +2823,82 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "Task": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "default": "未分配"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "create_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Create Time"
+          },
+          "update_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Update Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "create_time",
+          "update_time"
+        ],
+        "title": "Task",
+        "description": "任务响应模式"
+      },
       "TaskAssignmentCreate": {
         "properties": {
           "task_id": {
@@ -3017,6 +3154,39 @@
         "title": "TaskAssignmentUpdate",
         "description": "任务分配更新模式"
       },
+      "TaskBulkImportResult": {
+        "properties": {
+          "success_count": {
+            "type": "integer",
+            "title": "Success Count"
+          },
+          "fail_count": {
+            "type": "integer",
+            "title": "Fail Count"
+          },
+          "failed_tasks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Failed Tasks"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success_count",
+          "fail_count",
+          "failed_tasks",
+          "message"
+        ],
+        "title": "TaskBulkImportResult",
+        "description": "任务批量导入结果"
+      },
       "TaskCreate": {
         "properties": {
           "name": {
@@ -3074,83 +3244,7 @@
           "name"
         ],
         "title": "TaskCreate",
-        "description": "任务创建模式"
-      },
-      "TaskResponse": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Type"
-          },
-          "phase": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phase"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status",
-            "default": "未分配"
-          },
-          "id": {
-            "type": "integer",
-            "title": "Id"
-          },
-          "create_time": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Create Time"
-          },
-          "update_time": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Update Time"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "id",
-          "create_time",
-          "update_time"
-        ],
-        "title": "TaskResponse",
-        "description": "任务响应模式"
+        "description": "创建任务模式"
       },
       "TaskUpdate": {
         "properties": {
@@ -3212,7 +3306,7 @@
         },
         "type": "object",
         "title": "TaskUpdate",
-        "description": "任务更新模式"
+        "description": "更新任务模式"
       },
       "TaskWithAssignments": {
         "properties": {

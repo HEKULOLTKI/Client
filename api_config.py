@@ -40,7 +40,9 @@ API_ENDPOINTS = {
     "login": "/api/auth/login",
     "my_tasks": "/api/my-tasks",
     "my_task_stats": "/api/my-task-stats",
-    "refresh_token": "/api/auth/refresh"
+    "refresh_token": "/api/auth/refresh",
+    "devices": "/api/devices",
+    "create_device": "/api/devices"
 }
 
 # 任务状态映射
