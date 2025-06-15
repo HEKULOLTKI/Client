@@ -501,6 +501,9 @@ class DeviceAddDialog(QDialog):
         self.setFixedSize(900, 700)
         self.setModal(True)
         
+        # 隐藏标题栏控制按钮（最小化、最大化、关闭按钮）
+        self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
+        
         # 设置对话框背景样式
         self.setStyleSheet("""
             QDialog {
