@@ -39,138 +39,307 @@ class TaskSelectionDialog(QDialog):
         
     def setup_ui(self):
         """设置界面"""
-        self.setWindowTitle("选择要提交的任务")
-        self.setFixedSize(600, 500)
+        self.setWindowTitle("📋 任务提交管理")
+        self.setFixedSize(800, 650)
         self.setModal(True)
+        
+        # 隐藏标题栏控制按钮
+        self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
+        
+        # 设置对话框背景样式
+        self.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f8f9fa, stop:1 #e9ecef);
+                border-radius: 15px;
+            }
+        """)
         
         # 主布局
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(25, 25, 25, 20)
+        layout.setSpacing(15)
         
-        # 说明标签
-        info_label = QLabel("请选择要提交的任务：")
-        info_label.setFont(QFont("微软雅黑", 12))
-        info_label.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
-        layout.addWidget(info_label)
+        # 创建任务列表区域
+        self.create_task_list_section(layout)
+        
+        # 创建底部按钮区域
+        self.create_bottom_buttons_section(layout)
+        
+
+    def create_task_list_section(self, layout):
+        """创建任务列表区域"""
+        # 任务统计信息
+        stats_frame = QFrame()
+        stats_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 10px;
+                border: 1px solid rgba(102, 126, 234, 0.2);
+                padding: 15px;
+            }
+        """)
+        stats_layout = QHBoxLayout(stats_frame)
+        stats_layout.setContentsMargins(20, 15, 20, 15)
+        
+        # 任务统计标签
+        pending_tasks = [task for task in self.tasks if task.get('status') == api_config.TASK_STATUS.get("PENDING")]
+        total_label = QLabel(f"📊 总任务数：{len(self.tasks)}")
+        pending_label = QLabel(f"⏳ 待提交：{len(pending_tasks)}")
+        
+        for label in [total_label, pending_label]:
+            label.setFont(QFont("微软雅黑", 10, QFont.Bold))
+            label.setStyleSheet("""
+                QLabel {
+                    color: #495057;
+                    background: transparent;
+                    padding: 5px 10px;
+                    border-radius: 5px;
+                    background: #f8f9fa;
+                }
+            """)
+        
+        stats_layout.addWidget(total_label)
+        stats_layout.addWidget(pending_label)
+        stats_layout.addStretch()
+        
+        layout.addWidget(stats_frame)
         
         # 创建滚动区域
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet("""
             QScrollArea {
-                border: 1px solid #bdc3c7;
-                border-radius: 8px;
-                background-color: #f8f9fa;
+                border: none;
+                border-radius: 12px;
+                background-color: white;
+                padding: 5px;
             }
             QScrollBar:vertical {
-                background-color: #ecf0f1;
-                width: 12px;
-                border-radius: 6px;
+                background-color: #f8f9fa;
+                width: 8px;
+                border-radius: 4px;
+                margin: 2px;
             }
             QScrollBar::handle:vertical {
-                background-color: #95a5a6;
-                border-radius: 6px;
+                background-color: #667eea;
+                border-radius: 4px;
                 min-height: 20px;
             }
             QScrollBar::handle:vertical:hover {
-                background-color: #7f8c8d;
+                background-color: #5a6fd8;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0px;
             }
         """)
         
         # 任务列表容器
         tasks_widget = QWidget()
+        tasks_widget.setStyleSheet("background: transparent;")
         tasks_layout = QVBoxLayout(tasks_widget)
+        tasks_layout.setContentsMargins(10, 10, 10, 10)
+        tasks_layout.setSpacing(8)
         
         # 添加任务复选框
+        pending_count = 0
         for task in self.tasks:
-            if task.get('status') == api_config.TASK_STATUS["PENDING"]:
+            if task.get('status') == api_config.TASK_STATUS.get("PENDING"):
                 self.create_task_item(tasks_layout, task)
+                pending_count += 1
         
-        if not self.task_checkboxes:
+        if pending_count == 0:
             # 如果没有待提交的任务
-            no_tasks_label = QLabel("没有可提交的任务")
+            empty_frame = QFrame()
+            empty_frame.setStyleSheet("""
+                QFrame {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #fff5f5, stop:1 #ffe6e6);
+                    border: 2px dashed #ff7675;
+                    border-radius: 12px;
+                    padding: 40px;
+                    margin: 20px;
+                }
+            """)
+            empty_layout = QVBoxLayout(empty_frame)
+            
+            empty_icon = QLabel("📭")
+            empty_icon.setFont(QFont("Segoe UI Emoji", 48))
+            empty_icon.setAlignment(Qt.AlignCenter)
+            empty_icon.setStyleSheet("background: transparent; color: #ff7675;")
+            
+            no_tasks_label = QLabel("暂无可提交的任务")
+            no_tasks_label.setFont(QFont("微软雅黑", 14, QFont.Bold))
             no_tasks_label.setAlignment(Qt.AlignCenter)
-            no_tasks_label.setStyleSheet("color: #7f8c8d; font-size: 14px; padding: 20px;")
-            tasks_layout.addWidget(no_tasks_label)
+            no_tasks_label.setStyleSheet("color: #636e72; background: transparent; margin-top: 10px;")
+            
+            hint_label = QLabel("所有任务都已完成或正在进行中")
+            hint_label.setFont(QFont("微软雅黑", 10))
+            hint_label.setAlignment(Qt.AlignCenter)
+            hint_label.setStyleSheet("color: #b2bec3; background: transparent; margin-top: 5px;")
+            
+            empty_layout.addWidget(empty_icon)
+            empty_layout.addWidget(no_tasks_label)
+            empty_layout.addWidget(hint_label)
+            
+            tasks_layout.addWidget(empty_frame)
         
+        tasks_layout.addStretch()
         scroll_area.setWidget(tasks_widget)
         layout.addWidget(scroll_area)
         
-        # 按钮布局
-        button_layout = QHBoxLayout()
+    def create_bottom_buttons_section(self, layout):
+        """创建底部按钮区域"""
+        # 单行按钮区域
+        buttons_frame = QFrame()
+        buttons_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 12px;
+                border: 1px solid rgba(102, 126, 234, 0.1);
+                padding: 15px;
+            }
+        """)
+        buttons_layout = QHBoxLayout(buttons_frame)
+        buttons_layout.setContentsMargins(20, 15, 20, 15)
+        buttons_layout.setSpacing(15)
         
-        # 全选/取消全选按钮
-        select_all_btn = QPushButton("全选")
+        # 全选按钮
+        select_all_btn = QPushButton("✅ 全选")
+        select_all_btn.setFixedSize(100, 40)
         select_all_btn.clicked.connect(self.select_all_tasks)
         select_all_btn.setStyleSheet("""
             QPushButton {
-                background-color: #3498db;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #74b9ff, stop:1 #0984e3);
                 color: white;
                 border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
+                border-radius: 8px;
                 font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
             }
             QPushButton:hover {
-                background-color: #2980b9;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0984e3, stop:1 #0770c4);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(116, 185, 255, 0.4);
+            }
+            QPushButton:pressed {
+                transform: translateY(0px);
+                box-shadow: 0 2px 6px rgba(116, 185, 255, 0.3);
             }
         """)
-        button_layout.addWidget(select_all_btn)
+        buttons_layout.addWidget(select_all_btn)
         
-        clear_all_btn = QPushButton("取消全选")
+        # 取消全选按钮
+        clear_all_btn = QPushButton("❌ 取消全选")
+        clear_all_btn.setFixedSize(110, 40)
         clear_all_btn.clicked.connect(self.clear_all_tasks)
         clear_all_btn.setStyleSheet("""
             QPushButton {
-                background-color: #95a5a6;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #fd79a8, stop:1 #e84393);
                 color: white;
                 border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #7f8c8d;
-            }
-        """)
-        button_layout.addWidget(clear_all_btn)
-        
-        button_layout.addStretch()
-        
-        # 确定和取消按钮
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.button(QDialogButtonBox.Ok).setText("提交选中任务")
-        button_box.button(QDialogButtonBox.Cancel).setText("取消")
-        button_box.button(QDialogButtonBox.Ok).setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-                padding: 10px 20px;
-                border-radius: 4px;
+                border-radius: 8px;
                 font-size: 12px;
                 font-weight: bold;
+                font-family: '微软雅黑';
             }
             QPushButton:hover {
-                background-color: #229954;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #e84393, stop:1 #d63384);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(253, 121, 168, 0.4);
+            }
+            QPushButton:pressed {
+                transform: translateY(0px);
+                box-shadow: 0 2px 6px rgba(253, 121, 168, 0.3);
             }
         """)
-        button_box.button(QDialogButtonBox.Cancel).setStyleSheet("""
+        buttons_layout.addWidget(clear_all_btn)
+        
+        # 选中数量指示器
+        self.selected_count_label = QLabel("📋 未选中任务")
+        self.selected_count_label.setFont(QFont("微软雅黑", 10, QFont.Bold))
+        self.selected_count_label.setStyleSheet("""
+            QLabel {
+                color: #667eea;
+                background: rgba(102, 126, 234, 0.1);
+                padding: 8px 12px;
+                border-radius: 8px;
+            }
+        """)
+        buttons_layout.addWidget(self.selected_count_label)
+        
+        # 弹性空间
+        buttons_layout.addStretch()
+        
+        # 取消按钮
+        cancel_btn = QPushButton("🚫 取消")
+        cancel_btn.setFixedSize(100, 40)
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet("""
             QPushButton {
-                background-color: #e74c3c;
+                background: #ffffff;
+                color: #6c757d;
+                border: 2px solid #dee2e6;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: #f8f9fa;
+                border-color: #adb5bd;
+                color: #495057;
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(108, 117, 125, 0.15);
+            }
+            QPushButton:pressed {
+                background: #e9ecef;
+                transform: translateY(0px);
+                box-shadow: 0 2px 4px rgba(108, 117, 125, 0.1);
+            }
+        """)
+        buttons_layout.addWidget(cancel_btn)
+        
+        # 提交按钮
+        submit_btn = QPushButton("🚀 提交选中任务")
+        submit_btn.setFixedSize(140, 40)
+        submit_btn.clicked.connect(self.accept_selection)
+        submit_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #00b894, stop:1 #00a085);
                 color: white;
                 border: none;
-                padding: 10px 20px;
-                border-radius: 4px;
+                border-radius: 8px;
                 font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
             }
             QPushButton:hover {
-                background-color: #c0392b;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #00a085, stop:1 #008f72);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 15px rgba(0, 184, 148, 0.4);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #008f72, stop:1 #007d63);
+                transform: translateY(0px);
+                box-shadow: 0 2px 8px rgba(0, 184, 148, 0.3);
             }
         """)
-        button_box.accepted.connect(self.accept_selection)
-        button_box.rejected.connect(self.reject)
+        buttons_layout.addWidget(submit_btn)
         
-        button_layout.addWidget(button_box)
-        layout.addLayout(button_layout)
+        layout.addWidget(buttons_frame)
+        
+        # 连接复选框变化事件来更新选中数量
+        self.update_selected_count()
         
     def create_task_item(self, layout, task):
         """创建任务项"""
@@ -178,70 +347,140 @@ class TaskSelectionDialog(QDialog):
         task_frame = QFrame()
         task_frame.setStyleSheet("""
             QFrame {
-                background-color: white;
-                border: 1px solid #e0e0e0;
-                border-radius: 6px;
-                margin: 2px;
-                padding: 5px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #ffffff, stop:1 #fafbfc);
+                border: 2px solid rgba(102, 126, 234, 0.1);
+                border-radius: 12px;
+                margin: 3px;
+                padding: 8px;
             }
             QFrame:hover {
-                border-color: #3498db;
-                background-color: #f7f9fc;
+                border-color: #667eea;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f8f9ff, stop:1 #f0f2ff);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
             }
         """)
         
         task_layout = QHBoxLayout(task_frame)
-        task_layout.setContentsMargins(10, 8, 10, 8)
+        task_layout.setContentsMargins(15, 12, 15, 12)
+        task_layout.setSpacing(15)
         
         # 复选框
         checkbox = QCheckBox()
         checkbox.setStyleSheet("""
             QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
+                width: 20px;
+                height: 20px;
             }
             QCheckBox::indicator:unchecked {
-                border: 2px solid #bdc3c7;
-                border-radius: 3px;
+                border: 2px solid #dee2e6;
+                border-radius: 6px;
                 background-color: white;
             }
+            QCheckBox::indicator:unchecked:hover {
+                border-color: #667eea;
+                background-color: #f8f9ff;
+            }
             QCheckBox::indicator:checked {
-                border: 2px solid #3498db;
-                border-radius: 3px;
-                background-color: #3498db;
+                border: 2px solid #667eea;
+                border-radius: 6px;
+                background-color: #667eea;
                 image: url(data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>);
+            }
+            QCheckBox::indicator:checked:hover {
+                background-color: #5a6fd8;
+                border-color: #5a6fd8;
             }
         """)
         task_layout.addWidget(checkbox)
         
+        # 任务图标
+        task_icon = QLabel("📋")
+        task_icon.setFont(QFont("Segoe UI Emoji", 16))
+        task_icon.setStyleSheet("background: transparent; color: #667eea;")
+        task_layout.addWidget(task_icon)
+        
         # 任务信息
         info_layout = QVBoxLayout()
-        info_layout.setSpacing(4)
+        info_layout.setSpacing(6)
         
         # 任务名称
         name_label = QLabel(task.get('task_name', '未命名任务'))
-        name_label.setFont(QFont("微软雅黑", 11, QFont.Bold))
-        name_label.setStyleSheet("color: #2c3e50;")
+        name_label.setFont(QFont("微软雅黑", 12, QFont.Bold))
+        name_label.setStyleSheet("""
+            QLabel {
+                color: #2d3436;
+                background: transparent;
+            }
+        """)
         info_layout.addWidget(name_label)
         
         # 任务详情
-        details = []
-        if task.get('task_type'):
-            details.append(f"类型: {task['task_type']}")
-        if task.get('task_phase'):
-            details.append(f"阶段: {task['task_phase']}")
-        details.append(f"进度: {task.get('progress', 0)}%")
+        details_layout = QHBoxLayout()
+        details_layout.setSpacing(12)
         
-        details_label = QLabel(" | ".join(details))
-        details_label.setFont(QFont("微软雅黑", 9))
-        details_label.setStyleSheet("color: #7f8c8d;")
-        info_layout.addWidget(details_label)
+        # 任务类型
+        if task.get('task_type'):
+            type_label = QLabel(f"🏷️ {task['task_type']}")
+            type_label.setFont(QFont("微软雅黑", 9))
+            type_label.setStyleSheet("""
+                QLabel {
+                    color: #74b9ff;
+                    background: rgba(116, 185, 255, 0.1);
+                    border-radius: 8px;
+                    padding: 2px 8px;
+                }
+            """)
+            details_layout.addWidget(type_label)
+        
+        # 任务阶段
+        if task.get('task_phase'):
+            phase_label = QLabel(f"📍 {task['task_phase']}")
+            phase_label.setFont(QFont("微软雅黑", 9))
+            phase_label.setStyleSheet("""
+                QLabel {
+                    color: #fd79a8;
+                    background: rgba(253, 121, 168, 0.1);
+                    border-radius: 8px;
+                    padding: 2px 8px;
+                }
+            """)
+            details_layout.addWidget(phase_label)
+        
+        # 进度
+        progress = task.get('progress', 0)
+        progress_label = QLabel(f"📊 {progress}%")
+        progress_label.setFont(QFont("微软雅黑", 9))
+        progress_color = "#00b894" if progress >= 80 else "#fdcb6e" if progress >= 50 else "#e17055"
+        progress_label.setStyleSheet(f"""
+            QLabel {{
+                color: {progress_color};
+                background: rgba({int(progress_color[1:3], 16)}, {int(progress_color[3:5], 16)}, {int(progress_color[5:7], 16)}, 0.1);
+                border-radius: 8px;
+                padding: 2px 8px;
+            }}
+        """)
+        details_layout.addWidget(progress_label)
+        
+        details_layout.addStretch()
+        info_layout.addLayout(details_layout)
         
         task_layout.addLayout(info_layout)
         task_layout.addStretch()
         
+        # 优先级指示器
+        priority_indicator = QLabel("⭐")
+        priority_indicator.setFont(QFont("Segoe UI Emoji", 12))
+        priority_indicator.setStyleSheet("background: transparent; color: #fdcb6e;")
+        task_layout.addWidget(priority_indicator)
+        
         # 保存复选框引用
         self.task_checkboxes[task['id']] = checkbox
+        
+        # 连接复选框变化事件
+        checkbox.stateChanged.connect(self.update_selected_count)
         
         layout.addWidget(task_frame)
         
@@ -249,11 +488,52 @@ class TaskSelectionDialog(QDialog):
         """全选任务"""
         for checkbox in self.task_checkboxes.values():
             checkbox.setChecked(True)
+        self.update_selected_count()
             
     def clear_all_tasks(self):
         """取消全选"""
         for checkbox in self.task_checkboxes.values():
             checkbox.setChecked(False)
+        self.update_selected_count()
+        
+    def update_selected_count(self):
+        """更新选中任务数量"""
+        if not hasattr(self, 'selected_count_label'):
+            return
+            
+        selected_count = sum(1 for checkbox in self.task_checkboxes.values() if checkbox.isChecked())
+        total_count = len(self.task_checkboxes)
+        
+        if selected_count == 0:
+            self.selected_count_label.setText("📋 未选中任务")
+            self.selected_count_label.setStyleSheet("""
+                QLabel {
+                    color: #b2bec3;
+                    background: rgba(178, 190, 195, 0.1);
+                    padding: 8px 15px;
+                    border-radius: 8px;
+                }
+            """)
+        elif selected_count == total_count:
+            self.selected_count_label.setText(f"✅ 已全选 {selected_count} 个任务")
+            self.selected_count_label.setStyleSheet("""
+                QLabel {
+                    color: #00b894;
+                    background: rgba(0, 184, 148, 0.1);
+                    padding: 8px 15px;
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            self.selected_count_label.setText(f"📊 已选中 {selected_count}/{total_count} 个任务")
+            self.selected_count_label.setStyleSheet("""
+                QLabel {
+                    color: #667eea;
+                    background: rgba(102, 126, 234, 0.1);
+                    padding: 8px 15px;
+                    border-radius: 8px;
+                }
+            """)
             
     def accept_selection(self):
         """确认选择"""
