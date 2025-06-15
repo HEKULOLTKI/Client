@@ -6,7 +6,8 @@ import requests
 from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout, 
                              QPushButton, QLabel, QSystemTrayIcon, QMenu, 
                              QDesktopWidget, QToolButton, QFrame, QSizePolicy,
-                             QMessageBox)
+                             QMessageBox, QDialog, QCheckBox, QScrollArea, 
+                             QDialogButtonBox)
 from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 import config
@@ -16,6 +17,261 @@ from transition_screen import TransitionScreen
 from openai_api import OpenAIChat
 from tuopo_widget import TuopoWidget
 import api_config
+import logging
+
+# 禁用Flask的默认日志输出
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
+
+class TaskSelectionDialog(QDialog):
+    """任务选择对话框"""
+    
+    def __init__(self, tasks, parent=None):
+        super().__init__(parent)
+        self.tasks = tasks
+        self.selected_tasks = []
+        self.task_checkboxes = {}
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """设置界面"""
+        self.setWindowTitle("选择要提交的任务")
+        self.setFixedSize(600, 500)
+        self.setModal(True)
+        
+        # 主布局
+        layout = QVBoxLayout(self)
+        
+        # 说明标签
+        info_label = QLabel("请选择要提交的任务：")
+        info_label.setFont(QFont("微软雅黑", 12))
+        info_label.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
+        layout.addWidget(info_label)
+        
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #bdc3c7;
+                border-radius: 8px;
+                background-color: #f8f9fa;
+            }
+            QScrollBar:vertical {
+                background-color: #ecf0f1;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #95a5a6;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #7f8c8d;
+            }
+        """)
+        
+        # 任务列表容器
+        tasks_widget = QWidget()
+        tasks_layout = QVBoxLayout(tasks_widget)
+        
+        # 添加任务复选框
+        for task in self.tasks:
+            if task.get('status') == api_config.TASK_STATUS["PENDING"]:
+                self.create_task_item(tasks_layout, task)
+        
+        if not self.task_checkboxes:
+            # 如果没有待提交的任务
+            no_tasks_label = QLabel("没有可提交的任务")
+            no_tasks_label.setAlignment(Qt.AlignCenter)
+            no_tasks_label.setStyleSheet("color: #7f8c8d; font-size: 14px; padding: 20px;")
+            tasks_layout.addWidget(no_tasks_label)
+        
+        scroll_area.setWidget(tasks_widget)
+        layout.addWidget(scroll_area)
+        
+        # 按钮布局
+        button_layout = QHBoxLayout()
+        
+        # 全选/取消全选按钮
+        select_all_btn = QPushButton("全选")
+        select_all_btn.clicked.connect(self.select_all_tasks)
+        select_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
+        button_layout.addWidget(select_all_btn)
+        
+        clear_all_btn = QPushButton("取消全选")
+        clear_all_btn.clicked.connect(self.clear_all_tasks)
+        clear_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #95a5a6;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #7f8c8d;
+            }
+        """)
+        button_layout.addWidget(clear_all_btn)
+        
+        button_layout.addStretch()
+        
+        # 确定和取消按钮
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.button(QDialogButtonBox.Ok).setText("提交选中任务")
+        button_box.button(QDialogButtonBox.Cancel).setText("取消")
+        button_box.button(QDialogButtonBox.Ok).setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #229954;
+            }
+        """)
+        button_box.button(QDialogButtonBox.Cancel).setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+        """)
+        button_box.accepted.connect(self.accept_selection)
+        button_box.rejected.connect(self.reject)
+        
+        button_layout.addWidget(button_box)
+        layout.addLayout(button_layout)
+        
+    def create_task_item(self, layout, task):
+        """创建任务项"""
+        # 创建任务框架
+        task_frame = QFrame()
+        task_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                margin: 2px;
+                padding: 5px;
+            }
+            QFrame:hover {
+                border-color: #3498db;
+                background-color: #f7f9fc;
+            }
+        """)
+        
+        task_layout = QHBoxLayout(task_frame)
+        task_layout.setContentsMargins(10, 8, 10, 8)
+        
+        # 复选框
+        checkbox = QCheckBox()
+        checkbox.setStyleSheet("""
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #bdc3c7;
+                border-radius: 3px;
+                background-color: white;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #3498db;
+                border-radius: 3px;
+                background-color: #3498db;
+                image: url(data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>);
+            }
+        """)
+        task_layout.addWidget(checkbox)
+        
+        # 任务信息
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(4)
+        
+        # 任务名称
+        name_label = QLabel(task.get('task_name', '未命名任务'))
+        name_label.setFont(QFont("微软雅黑", 11, QFont.Bold))
+        name_label.setStyleSheet("color: #2c3e50;")
+        info_layout.addWidget(name_label)
+        
+        # 任务详情
+        details = []
+        if task.get('task_type'):
+            details.append(f"类型: {task['task_type']}")
+        if task.get('task_phase'):
+            details.append(f"阶段: {task['task_phase']}")
+        details.append(f"进度: {task.get('progress', 0)}%")
+        
+        details_label = QLabel(" | ".join(details))
+        details_label.setFont(QFont("微软雅黑", 9))
+        details_label.setStyleSheet("color: #7f8c8d;")
+        info_layout.addWidget(details_label)
+        
+        task_layout.addLayout(info_layout)
+        task_layout.addStretch()
+        
+        # 保存复选框引用
+        self.task_checkboxes[task['id']] = checkbox
+        
+        layout.addWidget(task_frame)
+        
+    def select_all_tasks(self):
+        """全选任务"""
+        for checkbox in self.task_checkboxes.values():
+            checkbox.setChecked(True)
+            
+    def clear_all_tasks(self):
+        """取消全选"""
+        for checkbox in self.task_checkboxes.values():
+            checkbox.setChecked(False)
+            
+    def accept_selection(self):
+        """确认选择"""
+        self.selected_tasks = []
+        for task_id, checkbox in self.task_checkboxes.items():
+            if checkbox.isChecked():
+                # 找到对应的任务
+                for task in self.tasks:
+                    if task['id'] == task_id:
+                        self.selected_tasks.append(task)
+                        break
+        
+        if not self.selected_tasks:
+            QMessageBox.warning(self, "提示", "请至少选择一个任务进行提交！")
+            return
+            
+        self.accept()
+        
+    def get_selected_tasks(self):
+        """获取选中的任务"""
+        return self.selected_tasks
+
 
 class TaskSubmissionWorker(QThread):
     """任务提交工作线程"""
@@ -25,39 +281,39 @@ class TaskSubmissionWorker(QThread):
     task_completed = pyqtSignal(str)    # 任务完成信号
     error_occurred = pyqtSignal(str)    # 错误信号
     
-    def __init__(self, api_base_url=None):
+    def __init__(self, selected_tasks=None, api_base_url=None):
         super().__init__()
+        self.selected_tasks = selected_tasks or []
         self.api_base_url = api_base_url or api_config.API_BASE_URL
         self.access_token = None
         
     def run(self):
         """执行任务提交流程"""
         try:
-            # 步骤1：获取访问令牌（这里需要用户名和密码，实际使用时需要从配置或输入获取）
+            # 步骤1：获取访问令牌
             self.progress_updated.emit("正在获取访问令牌...")
             if not self.authenticate():
                 self.error_occurred.emit("认证失败，请检查用户名和密码")
                 return
             
-            # 步骤2：获取当前用户的任务
-            self.progress_updated.emit("正在获取任务列表...")
-            tasks = self.get_my_tasks()
-            if not tasks:
-                self.task_completed.emit("没有找到待提交的任务")
+            # 步骤2：提交选中的任务
+            if not self.selected_tasks:
+                self.task_completed.emit("没有选择要提交的任务")
                 return
                 
-            # 步骤3：提交任务
-            self.progress_updated.emit(f"找到 {len(tasks)} 个任务，正在提交...")
+            self.progress_updated.emit(f"开始提交 {len(self.selected_tasks)} 个任务...")
             submitted_count = 0
             
-            for task in tasks:
-                # 只提交状态为"进行中"的任务
-                if task.get('status') == api_config.TASK_STATUS["PENDING"]:
-                    if self.submit_task(task['id']):
-                        submitted_count += 1
-                        self.progress_updated.emit(f"已提交任务: {task.get('task_name', '未命名任务')}")
+            for i, task in enumerate(self.selected_tasks, 1):
+                self.progress_updated.emit(f"正在提交任务 {i}/{len(self.selected_tasks)}: {task.get('task_name', '未命名任务')}")
+                
+                if self.submit_task(task['id']):
+                    submitted_count += 1
+                    self.progress_updated.emit(f"✓ 已提交任务: {task.get('task_name', '未命名任务')}")
+                else:
+                    self.progress_updated.emit(f"✗ 提交失败: {task.get('task_name', '未命名任务')}")
                         
-            self.task_completed.emit(f"任务提交完成！共提交了 {submitted_count} 个任务")
+            self.task_completed.emit(f"任务提交完成！成功提交 {submitted_count}/{len(self.selected_tasks)} 个任务")
             
         except Exception as e:
             self.error_occurred.emit(f"任务提交失败: {str(e)}")
@@ -128,7 +384,7 @@ class TaskSubmissionWorker(QThread):
             update_data = {
                 "status": api_config.TASK_STATUS["COMPLETED"],
                 "progress": 100,
-                "comments": "通过桌面管理器自动提交完成"
+                "comments": "通过桌面管理器选择提交完成"
             }
             
             response = requests.put(
@@ -147,6 +403,84 @@ class TaskSubmissionWorker(QThread):
         except Exception as e:
             print(f"提交任务异常: {str(e)}")
             return False
+
+
+class TaskListWorker(QThread):
+    """获取任务列表的工作线程"""
+    
+    # 定义信号
+    tasks_loaded = pyqtSignal(list)  # 任务加载完成信号
+    error_occurred = pyqtSignal(str)  # 错误信号
+    
+    def __init__(self, api_base_url=None):
+        super().__init__()
+        self.api_base_url = api_base_url or api_config.API_BASE_URL
+        self.access_token = None
+        
+    def run(self):
+        """获取任务列表"""
+        try:
+            # 认证
+            if not self.authenticate():
+                self.error_occurred.emit("认证失败，请检查用户名和密码")
+                return
+            
+            # 获取任务列表
+            tasks = self.get_my_tasks()
+            self.tasks_loaded.emit(tasks)
+            
+        except Exception as e:
+            self.error_occurred.emit(f"获取任务列表失败: {str(e)}")
+            
+    def authenticate(self):
+        """用户认证"""
+        try:
+            auth_data = {
+                "login_type": api_config.DEFAULT_LOGIN_TYPE,
+                "username": api_config.DEFAULT_USERNAME,
+                "password": api_config.DEFAULT_PASSWORD,
+                "grant_type": "password"
+            }
+            
+            response = requests.post(
+                f"{self.api_base_url}{api_config.API_ENDPOINTS['login']}",
+                data=auth_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                self.access_token = token_data.get("access_token")
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            return False
+            
+    def get_my_tasks(self):
+        """获取当前用户的任务"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.get(
+                f"{self.api_base_url}{api_config.API_ENDPOINTS['my_tasks']}",
+                headers=headers,
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return []
+                
+        except Exception as e:
+            return []
+
 
 class DesktopManager(QWidget):
     """桌面管理器 - 在桌面顶部悬浮显示"""
@@ -168,6 +502,7 @@ class DesktopManager(QWidget):
         self.role_desc_label = None  # 角色描述标签
         self.file_watcher = None  # 文件监视器
         self.task_worker = None  # 任务提交工作线程
+        self.task_list_worker = None  # 任务列表获取工作线程
         self.setup_file_watcher()  # 设置文件监视器
         self.load_role_data()  # 加载角色数据
         self.setup_ui()
@@ -496,7 +831,7 @@ class DesktopManager(QWidget):
             ("🐱", "宠物", self.show_pet, "#e74c3c"),
             ("💬", "聊天", self.show_chat, "#2ecc71"),
             ("⚙️", "设置", self.show_settings_action, "#f39c12"),
-            ("📤", "任务提交", self.submit_tasks, "#9b59b6"),
+            ("📤", "任务列表", self.submit_tasks, "#9b59b6"),
             ("❌", "退出", self.exit_application, "#95a5a6")
         ]
         
@@ -640,14 +975,63 @@ class DesktopManager(QWidget):
         # TODO: 实现设置界面
         
     def submit_tasks(self):
-        """提交任务"""
-        # 如果已有任务在执行，不允许重复提交
+        """打开任务选择对话框"""
+        # 如果已有任务在执行，不允许重复操作
         if self.task_worker and self.task_worker.isRunning():
             QMessageBox.information(self, "提示", "任务提交正在进行中，请稍等...")
             return
             
-        # 创建任务工作线程
-        self.task_worker = TaskSubmissionWorker()
+        if self.task_list_worker and self.task_list_worker.isRunning():
+            QMessageBox.information(self, "提示", "正在获取任务列表，请稍等...")
+            return
+            
+        # 显示加载状态
+        self.status_label.setText("正在获取任务列表...")
+        
+        # 创建任务列表获取工作线程
+        self.task_list_worker = TaskListWorker()
+        
+        # 连接信号
+        self.task_list_worker.tasks_loaded.connect(self.on_tasks_loaded)
+        self.task_list_worker.error_occurred.connect(self.on_task_list_error)
+        
+        # 开始获取任务列表
+        self.task_list_worker.start()
+        
+    @pyqtSlot(list)
+    def on_tasks_loaded(self, tasks):
+        """任务列表加载完成"""
+        self.status_label.setText("系统运行正常")
+        
+        if not tasks:
+            QMessageBox.information(self, "提示", "当前没有任务")
+            return
+            
+        # 过滤出待提交的任务
+        pending_tasks = [task for task in tasks if task.get('status') == api_config.TASK_STATUS["PENDING"]]
+        
+        if not pending_tasks:
+            QMessageBox.information(self, "提示", "没有可提交的任务")
+            return
+            
+        # 显示任务选择对话框
+        dialog = TaskSelectionDialog(tasks, self)
+        if dialog.exec_() == QDialog.Accepted:
+            selected_tasks = dialog.get_selected_tasks()
+            if selected_tasks:
+                self.start_task_submission(selected_tasks)
+                
+    @pyqtSlot(str)
+    def on_task_list_error(self, error_message):
+        """获取任务列表失败"""
+        self.status_label.setText("获取任务列表失败")
+        QMessageBox.warning(self, "错误", f"获取任务列表失败：{error_message}")
+        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+        
+    def start_task_submission(self, selected_tasks):
+        """开始提交选中的任务"""
+        # 创建任务提交工作线程
+        self.task_worker = TaskSubmissionWorker(selected_tasks)
         
         # 连接信号
         self.task_worker.progress_updated.connect(self.on_task_progress_updated)
@@ -805,6 +1189,11 @@ class DesktopManager(QWidget):
         if self.task_worker and self.task_worker.isRunning():
             self.task_worker.terminate()
             self.task_worker.wait()
+            
+        # 清理任务列表工作线程
+        if self.task_list_worker and self.task_list_worker.isRunning():
+            self.task_list_worker.terminate()
+            self.task_list_worker.wait()
             
         # 阻止默认的关闭行为
         event.ignore()
