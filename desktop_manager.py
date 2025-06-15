@@ -3,12 +3,15 @@ import os
 import json
 import subprocess
 import requests
+import csv
+import pandas as pd
 from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout, 
                              QPushButton, QLabel, QSystemTrayIcon, QMenu, 
                              QDesktopWidget, QToolButton, QFrame, QSizePolicy,
                              QMessageBox, QDialog, QCheckBox, QScrollArea, 
                              QDialogButtonBox, QLineEdit, QComboBox, QFormLayout,
-                             QTextEdit)
+                             QTextEdit, QFileDialog, QTabWidget, QTableWidget,
+                             QTableWidgetItem, QHeaderView, QProgressBar)
 from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 import config
@@ -489,12 +492,13 @@ class DeviceAddDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.device_data = {}
+        self.batch_devices = []  # 批量设备数据
         self.setup_ui()
         
     def setup_ui(self):
         """设置界面"""
-        self.setWindowTitle("添加设备")
-        self.setFixedSize(700, 550)
+        self.setWindowTitle("设备管理")
+        self.setFixedSize(900, 700)
         self.setModal(True)
         
         # 设置对话框背景样式
@@ -511,7 +515,54 @@ class DeviceAddDialog(QDialog):
         layout.setContentsMargins(30, 30, 30, 20)
         layout.setSpacing(15)
         
-
+        # 创建标签页
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #dee2e6;
+                border-radius: 10px;
+                background: white;
+            }
+            QTabBar::tab {
+                background: #e9ecef;
+                color: #495057;
+                padding: 15px 25px;
+                margin-right: 5px;
+                border-radius: 8px 8px 0 0;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QTabBar::tab:selected {
+                background: #667eea;
+                color: white;
+            }
+            QTabBar::tab:hover {
+                background: #adb5bd;
+                color: white;
+            }
+        """)
+        
+        # 单个添加标签页
+        self.single_tab = QWidget()
+        self.setup_single_device_tab()
+        self.tab_widget.addTab(self.single_tab, "🏷️ 单个添加")
+        
+        # 批量导入标签页
+        self.batch_tab = QWidget()
+        self.setup_batch_import_tab()
+        self.tab_widget.addTab(self.batch_tab, "📋 批量导入")
+        
+        layout.addWidget(self.tab_widget)
+        
+        # 底部按钮区域
+        self.create_bottom_buttons(layout)
+        
+    def setup_single_device_tab(self):
+        """设置单个设备添加标签页"""
+        layout = QVBoxLayout(self.single_tab)
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setSpacing(15)
         
         # 表单容器
         form_frame = QFrame()
@@ -566,7 +617,7 @@ class DeviceAddDialog(QDialog):
         self.name_edit.setStyleSheet(input_style)
         form_layout.addRow(name_label, self.name_edit)
         
-        # 设备类型（改为输入框）
+        # 设备类型
         type_label = QLabel("设备类型")
         type_label.setStyleSheet(label_style)
         self.type_edit = QLineEdit()
@@ -635,9 +686,236 @@ class DeviceAddDialog(QDialog):
         form_layout.addRow(status_label, self.status_combo)
         
         layout.addWidget(form_frame)
+        
+        # 操作按钮
+        button_layout = QHBoxLayout()
+        
+        # 清空表单按钮
+        clear_btn = QPushButton("🗑️ 清空表单")
+        clear_btn.setFixedSize(130, 45)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background: #f8f9fa;
+                color: #6c757d;
+                border: 2px solid #dee2e6;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: #e9ecef;
+                border-color: #adb5bd;
+                color: #495057;
+            }
+        """)
+        clear_btn.clicked.connect(self.clear_single_form)
+        
+        # 添加并继续按钮
+        add_continue_btn = QPushButton("➕ 添加并继续")
+        add_continue_btn.setFixedSize(150, 45)
+        add_continue_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #28a745, stop:1 #20c997);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #218838, stop:1 #1ea087);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+            }
+        """)
+        add_continue_btn.clicked.connect(self.add_device_and_continue)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(clear_btn)
+        button_layout.addWidget(add_continue_btn)
+        
+        layout.addLayout(button_layout)
         layout.addStretch()
         
-        # 按钮区域
+    def setup_batch_import_tab(self):
+        """设置批量导入标签页"""
+        layout = QVBoxLayout(self.batch_tab)
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setSpacing(15)
+        
+        # 顶部操作区域
+        top_frame = QFrame()
+        top_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 8px;
+                border: 1px solid #dee2e6;
+            }
+        """)
+        top_layout = QVBoxLayout(top_frame)
+        top_layout.setContentsMargins(20, 20, 20, 20)
+        top_layout.setSpacing(15)
+        
+        # 说明文字
+        info_label = QLabel("批量导入设备信息，支持Excel(.xlsx)和CSV(.csv)格式文件")
+        info_label.setFont(QFont("微软雅黑", 12))
+        info_label.setStyleSheet("color: #495057; font-weight: bold;")
+        top_layout.addWidget(info_label)
+        
+        # 操作按钮行
+        operation_layout = QHBoxLayout()
+        
+        # 下载模板按钮
+        download_template_btn = QPushButton("📥 下载导入模板")
+        download_template_btn.setFixedSize(150, 40)
+        download_template_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #007bff, stop:1 #0056b3);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0056b3, stop:1 #004085);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+            }
+        """)
+        download_template_btn.clicked.connect(self.download_template)
+        
+        # 选择文件按钮
+        select_file_btn = QPushButton("📁 选择导入文件")
+        select_file_btn.setFixedSize(150, 40)
+        select_file_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6f42c1, stop:1 #5a32a3);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #5a32a3, stop:1 #4c2a85);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 8px rgba(111, 66, 193, 0.3);
+            }
+        """)
+        select_file_btn.clicked.connect(self.select_import_file)
+        
+        # 导入批量设备按钮
+        import_devices_btn = QPushButton("🚀 导入批量设备")
+        import_devices_btn.setFixedSize(150, 40)
+        import_devices_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #fd7e14, stop:1 #e55100);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #e55100, stop:1 #d84315);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 8px rgba(253, 126, 20, 0.3);
+            }
+        """)
+        import_devices_btn.clicked.connect(self.import_batch_devices)
+        
+        operation_layout.addWidget(download_template_btn)
+        operation_layout.addWidget(select_file_btn)
+        operation_layout.addWidget(import_devices_btn)
+        operation_layout.addStretch()
+        
+        top_layout.addLayout(operation_layout)
+        
+        # 文件路径显示
+        self.file_path_label = QLabel("未选择文件")
+        self.file_path_label.setStyleSheet("""
+            QLabel {
+                color: #6c757d;
+                font-size: 12px;
+                font-family: '微软雅黑';
+                padding: 10px;
+                background: #f8f9fa;
+                border-radius: 4px;
+                border: 1px solid #dee2e6;
+            }
+        """)
+        top_layout.addWidget(self.file_path_label)
+        
+        layout.addWidget(top_frame)
+        
+        # 预览表格
+        self.preview_table = QTableWidget()
+        self.preview_table.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #dee2e6;
+                background-color: white;
+                alternate-background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 8px;
+            }
+            QTableWidget::item {
+                padding: 8px;
+                border: none;
+            }
+            QTableWidget::item:selected {
+                background-color: #667eea;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #495057;
+                color: white;
+                font-weight: bold;
+                padding: 10px;
+                border: none;
+                font-size: 12px;
+                font-family: '微软雅黑';
+            }
+        """)
+        self.preview_table.setAlternatingRowColors(True)
+        self.preview_table.horizontalHeader().setStretchLastSection(True)
+        self.preview_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        
+        layout.addWidget(self.preview_table)
+        
+        # 进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #dee2e6;
+                border-radius: 8px;
+                text-align: center;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QProgressBar::chunk {
+                background-color: #28a745;
+                border-radius: 6px;
+            }
+        """)
+        layout.addWidget(self.progress_bar)
+        
+    def create_bottom_buttons(self, layout):
+        """创建底部按钮"""
         button_frame = QFrame()
         button_frame.setStyleSheet("""
             QFrame {
@@ -648,10 +926,10 @@ class DeviceAddDialog(QDialog):
         button_layout = QHBoxLayout(button_frame)
         button_layout.setContentsMargins(0, 20, 0, 10)
         
-        # 取消按钮
-        cancel_btn = QPushButton("取消")
-        cancel_btn.setFixedSize(130, 55)
-        cancel_btn.setStyleSheet("""
+        # 关闭按钮
+        close_btn = QPushButton("关闭")
+        close_btn.setFixedSize(130, 55)
+        close_btn.setStyleSheet("""
             QPushButton {
                 background: #ffffff;
                 color: #6c757d;
@@ -674,46 +952,23 @@ class DeviceAddDialog(QDialog):
                 box-shadow: 0 2px 4px rgba(108, 117, 125, 0.1);
             }
         """)
-        cancel_btn.clicked.connect(self.reject)
-        
-        # 添加设备按钮
-        add_btn = QPushButton("🚀 添加设备")
-        add_btn.setFixedSize(150, 55)
-        add_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #667eea, stop:0.5 #764ba2, stop:1 #f093fb);
-                color: white;
-                border: none;
-                border-radius: 12px;
-                font-size: 16px;
-                font-weight: bold;
-                font-family: '微软雅黑';
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #5a6fd8, stop:0.5 #6a4190, stop:1 #e084e9);
-                transform: translateY(-2px);
-                box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-            }
-            QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #5865c6, stop:0.5 #5e3d7e, stop:1 #d275d7);
-                transform: translateY(0px);
-                box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
-            }
-        """)
-        add_btn.clicked.connect(self.accept_device)
+        close_btn.clicked.connect(self.reject)
         
         button_layout.addStretch()
-        button_layout.addWidget(cancel_btn)
-        button_layout.addSpacing(20)
-        button_layout.addWidget(add_btn)
+        button_layout.addWidget(close_btn)
         
         layout.addWidget(button_frame)
         
-    def accept_device(self):
-        """确认添加设备"""
+    def clear_single_form(self):
+        """清空单个设备表单"""
+        self.name_edit.clear()
+        self.type_edit.clear()
+        self.ip_edit.clear()
+        self.location_edit.clear()
+        self.status_combo.setCurrentText("offline")
+        
+    def add_device_and_continue(self):
+        """添加设备并继续"""
         # 验证必填字段
         if not self.name_edit.text().strip():
             QMessageBox.warning(self, "提示", "设备名称不能为空！")
@@ -728,11 +983,139 @@ class DeviceAddDialog(QDialog):
             "status": self.status_combo.currentText()
         }
         
-        self.accept()
+        # 发送添加单个设备的信号
+        self.parent().start_single_device_addition(self.device_data)
         
+        # 清空表单，准备继续添加
+        self.clear_single_form()
+        
+    def download_template(self):
+        """下载导入模板"""
+        try:
+            # 选择保存位置
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "保存模板文件", "设备导入模板.xlsx", 
+                "Excel文件 (*.xlsx);;CSV文件 (*.csv)"
+            )
+            
+            if not file_path:
+                return
+                
+            # 创建模板数据
+            template_data = {
+                "设备名称": ["路由器-01", "交换机-01", "防火墙-01"],
+                "设备类型": ["路由器", "交换机", "防火墙"],
+                "IP地址": ["192.168.1.1", "192.168.1.2", "192.168.1.3"],
+                "设备位置": ["机房A-机柜01-U1", "机房A-机柜01-U2", "机房A-机柜01-U3"],
+                "设备状态": ["online", "online", "offline"]
+            }
+            
+            df = pd.DataFrame(template_data)
+            
+            if file_path.endswith('.xlsx'):
+                df.to_excel(file_path, index=False, engine='openpyxl')
+            else:
+                df.to_csv(file_path, index=False, encoding='utf-8-sig')
+                
+            QMessageBox.information(self, "成功", f"模板文件已保存到：\n{file_path}")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"保存模板文件失败：{str(e)}")
+            
+    def select_import_file(self):
+        """选择导入文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择导入文件", "", 
+            "Excel文件 (*.xlsx);;CSV文件 (*.csv);;所有文件 (*.*)"
+        )
+        
+        if file_path:
+            self.file_path_label.setText(f"已选择文件: {os.path.basename(file_path)}")
+            self.file_path_label.setToolTip(file_path)
+            self.import_file_path = file_path
+            self.preview_import_file(file_path)
+            
+    def preview_import_file(self, file_path):
+        """预览导入文件"""
+        try:
+            # 读取文件
+            if file_path.endswith('.xlsx'):
+                df = pd.read_excel(file_path)
+            else:
+                df = pd.read_csv(file_path, encoding='utf-8-sig')
+                
+            # 标准化列名
+            column_mapping = {
+                '设备名称': 'name',
+                '设备类型': 'type', 
+                'IP地址': 'ip',
+                '设备位置': 'location',
+                '设备状态': 'status'
+            }
+            
+            # 重命名列
+            df = df.rename(columns=column_mapping)
+            
+            # 设置表格
+            self.preview_table.setRowCount(len(df))
+            self.preview_table.setColumnCount(len(df.columns))
+            self.preview_table.setHorizontalHeaderLabels(df.columns.tolist())
+            
+            # 填充数据
+            for i, row in df.iterrows():
+                for j, value in enumerate(row):
+                    item = QTableWidgetItem(str(value) if pd.notna(value) else "")
+                    self.preview_table.setItem(i, j, item)
+                    
+            # 保存数据用于导入
+            self.batch_devices = df.to_dict('records')
+            
+            # 显示文件信息
+            self.file_path_label.setText(f"已加载 {len(df)} 条设备记录")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"读取文件失败：{str(e)}")
+            self.file_path_label.setText("文件读取失败")
+            
+    def import_batch_devices(self):
+        """导入批量设备"""
+        if not hasattr(self, 'batch_devices') or not self.batch_devices:
+            QMessageBox.warning(self, "提示", "请先选择并预览导入文件！")
+            return
+            
+        reply = QMessageBox.question(
+            self, "确认导入", 
+            f"确定要导入 {len(self.batch_devices)} 个设备吗？",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # 显示进度条
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setMaximum(len(self.batch_devices))
+            self.progress_bar.setValue(0)
+            
+            # 发送批量导入信号
+            self.parent().start_batch_device_addition(self.batch_devices)
+            
+    def update_progress(self, current, total):
+        """更新进度条"""
+        if hasattr(self, 'progress_bar'):
+            self.progress_bar.setValue(current)
+            self.progress_bar.setFormat(f"正在导入: {current}/{total} ({current/total*100:.1f}%)")
+            
+    def hide_progress(self):
+        """隐藏进度条"""
+        if hasattr(self, 'progress_bar'):
+            self.progress_bar.setVisible(False)
+            
     def get_device_data(self):
         """获取设备数据"""
         return self.device_data
+        
+    def get_batch_devices(self):
+        """获取批量设备数据"""
+        return self.batch_devices
 
 
 class DeviceAddWorker(QThread):
@@ -824,6 +1207,140 @@ class DeviceAddWorker(QThread):
             return False
 
 
+class BatchDeviceAddWorker(QThread):
+    """批量设备添加工作线程"""
+    
+    # 定义信号
+    progress_updated = pyqtSignal(str)          # 进度更新信号
+    batch_progress = pyqtSignal(int, int)       # 批量进度信号(当前数量, 总数量)
+    device_added = pyqtSignal(str)              # 单个设备添加成功信号
+    batch_completed = pyqtSignal(str)           # 批量添加完成信号
+    error_occurred = pyqtSignal(str)            # 错误信号
+    
+    def __init__(self, batch_devices=None, api_base_url=None):
+        super().__init__()
+        self.batch_devices = batch_devices or []
+        self.api_base_url = api_base_url or api_config.API_BASE_URL
+        self.access_token = None
+        
+    def run(self):
+        """执行批量设备添加流程"""
+        try:
+            # 步骤1：获取访问令牌
+            self.progress_updated.emit("正在获取访问令牌...")
+            if not self.authenticate():
+                self.error_occurred.emit("认证失败，请检查管理员账号配置")
+                return
+            
+            # 步骤2：批量添加设备
+            if not self.batch_devices:
+                self.error_occurred.emit("没有设备数据需要导入")
+                return
+                
+            self.progress_updated.emit(f"开始批量添加 {len(self.batch_devices)} 个设备...")
+            success_count = 0
+            fail_count = 0
+            
+            for i, device in enumerate(self.batch_devices, 1):
+                self.progress_updated.emit(f"正在添加设备 {i}/{len(self.batch_devices)}: {device.get('name', '未命名设备')}")
+                self.batch_progress.emit(i, len(self.batch_devices))
+                
+                # 确保设备数据格式正确
+                device_data = self.format_device_data(device)
+                
+                if self.add_single_device(device_data):
+                    success_count += 1
+                    self.device_added.emit(f"✓ 设备添加成功: {device.get('name', '未命名设备')}")
+                else:
+                    fail_count += 1
+                    self.progress_updated.emit(f"✗ 设备添加失败: {device.get('name', '未命名设备')}")
+                    
+            # 完成通知
+            self.batch_completed.emit(
+                f"批量添加完成！成功添加 {success_count} 个设备，失败 {fail_count} 个设备"
+            )
+            
+        except Exception as e:
+            self.error_occurred.emit(f"批量设备添加失败: {str(e)}")
+            
+    def authenticate(self):
+        """管理员认证（使用admin账号）"""
+        try:
+            # 使用admin账号进行认证
+            auth_data = {
+                "login_type": "管理员",  # 使用管理员登录类型
+                "username": "admin",     # 强制使用admin用户名
+                "password": api_config.DEFAULT_PASSWORD,
+                "grant_type": "password"
+            }
+            
+            response = requests.post(
+                f"{self.api_base_url}{api_config.API_ENDPOINTS['login']}",
+                data=auth_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                self.access_token = token_data.get("access_token")
+                return True
+            else:
+                print(f"管理员认证失败: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"管理员认证异常: {str(e)}")
+            return False
+            
+    def format_device_data(self, device):
+        """格式化设备数据"""
+        # 确保所有必需字段都存在，并处理None值
+        formatted_device = {
+            "name": str(device.get('name', '')).strip() if device.get('name') else '',
+            "type": str(device.get('type', '')).strip() if device.get('type') else None,
+            "ip": str(device.get('ip', '')).strip() if device.get('ip') else None,
+            "location": str(device.get('location', '')).strip() if device.get('location') else None,
+            "status": str(device.get('status', 'offline')).strip() if device.get('status') else 'offline'
+        }
+        
+        # 验证设备名称不能为空
+        if not formatted_device["name"]:
+            formatted_device["name"] = f"设备-{pd.Timestamp.now().strftime('%Y%m%d%H%M%S')}"
+            
+        # 确保状态值有效
+        valid_statuses = ['online', 'offline', 'maintenance']
+        if formatted_device["status"] not in valid_statuses:
+            formatted_device["status"] = 'offline'
+            
+        return formatted_device
+        
+    def add_single_device(self, device_data):
+        """添加单个设备"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(
+                f"{self.api_base_url}{api_config.API_ENDPOINTS['create_device']}",
+                json=device_data,
+                headers=headers,
+                timeout=api_config.REQUEST_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                return True
+            else:
+                print(f"添加设备失败: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"添加设备异常: {str(e)}")
+            return False
+
+
 class DesktopManager(QWidget):
     """桌面管理器 - 在桌面顶部悬浮显示"""
     
@@ -846,6 +1363,8 @@ class DesktopManager(QWidget):
         self.task_worker = None  # 任务提交工作线程
         self.task_list_worker = None  # 任务列表获取工作线程
         self.device_worker = None  # 设备添加工作线程
+        self.batch_device_worker = None  # 批量设备添加工作线程
+        self.device_dialog = None  # 设备添加对话框实例
         self.setup_file_watcher()  # 设置文件监视器
         self.load_role_data()  # 加载角色数据
         self.setup_ui()
@@ -1321,16 +1840,20 @@ class DesktopManager(QWidget):
     def add_device(self):
         """添加设备"""
         # 检查是否有设备添加操作正在进行
-        if self.device_worker and self.device_worker.isRunning():
+        if (self.device_worker and self.device_worker.isRunning()) or \
+           (self.batch_device_worker and self.batch_device_worker.isRunning()):
             QMessageBox.information(self, "提示", "设备添加正在进行中，请稍等...")
             return
             
-        # 显示设备添加对话框
-        dialog = DeviceAddDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            device_data = dialog.get_device_data()
-            if device_data:
-                self.start_device_addition(device_data)
+        # 如果对话框已存在且可见，则显示并激活
+        if self.device_dialog and self.device_dialog.isVisible():
+            self.device_dialog.raise_()
+            self.device_dialog.activateWindow()
+            return
+            
+        # 创建新的设备添加对话框
+        self.device_dialog = DeviceAddDialog(self)
+        self.device_dialog.show()  # 使用show()而不是exec_()，这样对话框不会阻塞主程序
                 
     def start_device_addition(self, device_data):
         """开始设备添加流程"""
@@ -1375,6 +1898,86 @@ class DesktopManager(QWidget):
         
         # 2秒后恢复状态显示
         QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+        
+    def start_single_device_addition(self, device_data):
+        """开始单个设备添加流程"""
+        # 检查是否有设备添加操作正在进行
+        if self.device_worker and self.device_worker.isRunning():
+            QMessageBox.information(self, "提示", "设备添加正在进行中，请稍等...")
+            return
+        
+        # 创建设备添加工作线程
+        self.device_worker = DeviceAddWorker(device_data)
+        
+        # 连接信号
+        self.device_worker.progress_updated.connect(self.on_device_progress_updated)
+        self.device_worker.device_added.connect(self.on_single_device_added)
+        self.device_worker.error_occurred.connect(self.on_device_error)
+        
+        # 开始设备添加
+        self.status_label.setText("正在准备添加设备...")
+        self.device_worker.start()
+        
+    def start_batch_device_addition(self, batch_devices):
+        """开始批量设备添加流程"""
+        # 检查是否有设备添加操作正在进行
+        if self.batch_device_worker and self.batch_device_worker.isRunning():
+            QMessageBox.information(self, "提示", "批量设备添加正在进行中，请稍等...")
+            return
+        
+        # 创建批量设备添加工作线程
+        self.batch_device_worker = BatchDeviceAddWorker(batch_devices)
+        
+        # 连接信号
+        self.batch_device_worker.progress_updated.connect(self.on_device_progress_updated)
+        self.batch_device_worker.batch_progress.connect(self.on_batch_progress_updated)
+        self.batch_device_worker.device_added.connect(self.on_batch_device_added)
+        self.batch_device_worker.batch_completed.connect(self.on_batch_completed)
+        self.batch_device_worker.error_occurred.connect(self.on_device_error)
+        
+        # 开始批量设备添加
+        self.status_label.setText("正在准备批量添加设备...")
+        self.batch_device_worker.start()
+        
+    @pyqtSlot(str)
+    def on_single_device_added(self, message):
+        """单个设备添加完成回调"""
+        self.status_label.setText("设备添加成功")
+        print(f"单个设备添加完成: {message}")
+        
+        # 不显示消息框，只显示简短提示，避免打断用户操作
+        self.status_label.setText("设备添加成功，可继续添加")
+        
+        # 3秒后恢复状态显示
+        QTimer.singleShot(3000, lambda: self.status_label.setText("系统运行正常"))
+        
+    @pyqtSlot(int, int)
+    def on_batch_progress_updated(self, current, total):
+        """批量进度更新回调"""
+        if self.device_dialog and hasattr(self.device_dialog, 'update_progress'):
+            self.device_dialog.update_progress(current, total)
+        self.status_label.setText(f"正在导入设备: {current}/{total}")
+        
+    @pyqtSlot(str)
+    def on_batch_device_added(self, message):
+        """批量设备中单个设备添加成功回调"""
+        print(f"批量设备添加进度: {message}")
+        
+    @pyqtSlot(str)
+    def on_batch_completed(self, message):
+        """批量设备添加完成回调"""
+        self.status_label.setText("批量添加完成")
+        print(f"批量设备添加完成: {message}")
+        
+        # 隐藏进度条
+        if self.device_dialog and hasattr(self.device_dialog, 'hide_progress'):
+            self.device_dialog.hide_progress()
+        
+        # 显示完成对话框
+        QMessageBox.information(self, "批量添加完成", message)
+        
+        # 3秒后恢复状态显示
+        QTimer.singleShot(3000, lambda: self.status_label.setText("系统运行正常"))
         
     def submit_tasks(self):
         """打开任务选择对话框"""
@@ -1601,6 +2204,15 @@ class DesktopManager(QWidget):
         if self.device_worker and self.device_worker.isRunning():
             self.device_worker.terminate()
             self.device_worker.wait()
+            
+        # 清理批量设备工作线程
+        if self.batch_device_worker and self.batch_device_worker.isRunning():
+            self.batch_device_worker.terminate()
+            self.batch_device_worker.wait()
+            
+        # 关闭设备对话框
+        if self.device_dialog:
+            self.device_dialog.close()
             
         # 阻止默认的关闭行为
         event.ignore()

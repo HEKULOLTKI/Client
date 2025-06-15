@@ -1,19 +1,19 @@
 {
   "user": {
-    "id": 7,
-    "username": "user2",
-    "role": "系统架构师",
+    "id": 6,
+    "username": "user1",
+    "role": "网络工程师",
     "type": "操作员",
     "status": "active",
-    "created_at": "2025-06-14T05:52:58",
-    "updated_at": "2025-06-14T05:52:58"
+    "created_at": "2025-06-14T05:31:42",
+    "updated_at": "2025-06-14T05:31:42"
   },
   "selectedRole": {
-    "value": "系统架构师",
-    "label": "系统架构师",
-    "description": "负责系统架构设计和技术选型决策",
-    "icon": "Cpu"
+    "value": "网络工程师",
+    "label": "网络工程师",
+    "description": "负责网络设备配置、监控和故障排除",
+    "icon": "Monitor"
   },
-  "timestamp": "2025-06-15T03:55:08.984Z",
+  "timestamp": "2025-06-15T05:20:33.204Z",
   "action": "role_selection"
 }
