@@ -73,17 +73,17 @@ class EnhancedTransitionScreen(TransitionScreen):
         # 如果需要执行图标操作，修改进度文本
         if self.icon_operation == 'backup':
             self.progress_texts = [
-                "正在扫描桌面图标...",
-                "正在备份桌面图标...",
-                "正在移动桌面图标...",
-                "桌面图标备份完成，准备启动桌面管理器..."
+                "正在扫描桌面文件...",
+                "正在备份桌面文件...",
+                "正在整理桌面环境...",
+                "桌面备份完成，准备启动桌面管理器..."
             ]
         elif self.icon_operation == 'restore':
             self.progress_texts = [
                 "正在准备还原...",
-                "正在还原桌面图标...",
+                "正在还原桌面文件...",
                 "正在恢复桌面环境...",
-                "桌面图标还原完成..."
+                "桌面还原完成..."
             ]
     
     def show_transition_with_icon_operation(self, custom_message=None, custom_duration=None, loading_style=None):
@@ -133,16 +133,16 @@ class EnhancedTransitionScreen(TransitionScreen):
         self.icon_operation_completed_flag = True
         
         if success:
-            print(f"图标操作完成: {self.icon_operation}")
+            print(f"桌面文件操作完成: {self.icon_operation}")
             if hasattr(self, 'info_label'):
                 if self.icon_operation == 'backup':
-                    self.info_label.setText("桌面图标已备份，准备启动桌面管理器...")
+                    self.info_label.setText("桌面文件已备份，准备启动桌面管理器...")
                 elif self.icon_operation == 'restore':
-                    self.info_label.setText("桌面图标已还原，准备启动浏览器...")
+                    self.info_label.setText("桌面文件已还原，准备启动浏览器...")
         else:
-            print(f"图标操作失败: {self.icon_operation}")
+            print(f"桌面文件操作失败: {self.icon_operation}")
             if hasattr(self, 'info_label'):
-                self.info_label.setText("图标操作失败，但将继续...")
+                self.info_label.setText("桌面操作失败，但将继续...")
         
         # 发送完成信号
         self.icon_operation_completed.emit(success)
@@ -174,13 +174,13 @@ class EnhancedTransitionScreen(TransitionScreen):
         super().closeEvent(event)
 
 
-def create_backup_transition(message="正在备份桌面图标，准备启动桌面管理器...", duration=5000):
-    """创建备份图标的过渡界面"""
+def create_backup_transition(message="正在备份桌面文件，准备启动桌面管理器...", duration=5000):
+    """创建备份桌面文件的过渡界面"""
     return EnhancedTransitionScreen(message, duration, 'backup')
 
 
-def create_restore_transition(message="正在还原桌面图标，准备启动浏览器...", duration=5000):
-    """创建还原图标的过渡界面"""
+def create_restore_transition(message="正在还原桌面文件，准备启动浏览器...", duration=5000):
+    """创建还原桌面文件的过渡界面"""
     return EnhancedTransitionScreen(message, duration, 'restore')
 
 

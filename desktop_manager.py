@@ -2406,11 +2406,11 @@ class DesktopManager(QWidget):
                 subprocess.Popen([
                     sys.executable, 
                     enhanced_script_path,
-                    "正在还原桌面图标，准备启动全屏网页...",
+                    "正在还原桌面文件，准备启动全屏网页...",
                     "5000",  # 增加持续时间，因为需要执行图标还原
                     "--restore"
                 ])
-                print("增强过渡页面已启动，将执行桌面图标还原并启动全屏浏览器")
+                print("增强过渡页面已启动，将执行桌面文件还原并启动全屏浏览器")
                 return
             
             # 备用：查找原始过渡页面脚本

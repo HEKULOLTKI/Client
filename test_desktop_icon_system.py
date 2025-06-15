@@ -14,9 +14,9 @@ from desktop_icon_manager import DesktopIconManager
 from enhanced_transition_screen import EnhancedTransitionScreen, create_backup_transition, create_restore_transition
 
 def test_desktop_icon_manager():
-    """测试桌面图标管理器"""
+    """测试桌面文件管理器"""
     print("=" * 60)
-    print("测试桌面图标管理器")
+    print("测试桌面文件管理器")
     print("=" * 60)
     
     manager = DesktopIconManager()
@@ -25,16 +25,18 @@ def test_desktop_icon_manager():
     print(f"备份文件夹: {manager.backup_folder}")
     print(f"备份信息文件: {manager.backup_info_file}")
     
-    # 测试扫描桌面图标
-    print("\n扫描桌面图标...")
-    icons = manager.scan_desktop_icons()
-    print(f"找到 {len(icons)} 个图标")
+    # 测试扫描桌面文件
+    print("\n扫描桌面文件...")
+    files = manager.scan_desktop_files()
+    print(f"找到 {len(files)} 个文件/文件夹")
     
-    for i, icon in enumerate(icons[:5]):  # 只显示前5个
-        print(f"  {i+1}. {icon['name']} ({icon['extension']}, {icon['size']} bytes)")
+    for i, file_item in enumerate(files[:5]):  # 只显示前5个
+        file_type = file_item.get('type', 'file')
+        size_str = f"{file_item['size']} bytes" if file_item['size'] > 0 else "0 bytes"
+        print(f"  {i+1}. {file_item['name']} ({file_type}, {file_item['extension']}, {size_str})")
     
-    if len(icons) > 5:
-        print(f"  ... 还有 {len(icons) - 5} 个图标")
+    if len(files) > 5:
+        print(f"  ... 还有 {len(files) - 5} 个文件/文件夹")
     
     # 检查是否有备份
     has_backup = manager.has_backup()
@@ -44,11 +46,12 @@ def test_desktop_icon_manager():
         backup_info = manager.get_backup_info()
         if backup_info:
             backup_time = time.ctime(backup_info.get('backup_time', 0))
-            icon_count = len(backup_info.get('icons', []))
+            # 兼容新旧版本的备份格式
+            file_count = len(backup_info.get('files', backup_info.get('icons', [])))
             print(f"备份时间: {backup_time}")
-            print(f"备份图标数量: {icon_count}")
+            print(f"备份文件数量: {file_count}")
     
-    return manager, icons
+    return manager, files
 
 def test_enhanced_transition_screen():
     """测试增强过渡界面"""
@@ -161,7 +164,7 @@ def test_system_compatibility():
 
 def run_full_test():
     """运行完整测试"""
-    print("桌面图标备份还原系统 - 完整测试")
+    print("桌面文件备份还原系统 - 完整测试")
     print("=" * 80)
     
     # 1. 测试依赖项
@@ -176,12 +179,12 @@ def run_full_test():
     # 3. 测试文件权限
     test_file_permissions()
     
-    # 4. 测试桌面图标管理器
+    # 4. 测试桌面文件管理器
     try:
-        manager, icons = test_desktop_icon_manager()
-        print("✓ 桌面图标管理器测试通过")
+        manager, files = test_desktop_icon_manager()
+        print("✓ 桌面文件管理器测试通过")
     except Exception as e:
-        print(f"✗ 桌面图标管理器测试失败: {str(e)}")
+        print(f"✗ 桌面文件管理器测试失败: {str(e)}")
         return False
     
     # 5. 测试增强过渡界面
@@ -200,12 +203,12 @@ def run_full_test():
 
 def interactive_test():
     """交互式测试"""
-    print("桌面图标备份还原系统 - 交互式测试")
+    print("桌面文件备份还原系统 - 交互式测试")
     print("=" * 80)
     
     while True:
         print("\n选择测试项目:")
-        print("1. 测试桌面图标管理器")
+        print("1. 测试桌面文件管理器")
         print("2. 测试增强过渡界面")
         print("3. 测试文件权限")
         print("4. 测试依赖项")

@@ -190,7 +190,7 @@ class FullscreenBrowser(QMainWindow):
         """启动独立的过渡页面进程（包含桌面图标备份）"""
         try:
             # 准备启动增强过渡页面的参数
-            message = "正在备份桌面图标，准备启动桌面管理器..."
+            message = "正在备份桌面文件，准备启动桌面管理器..."
             duration = "5000"  # 增加持续时间，因为需要执行图标备份
             
             # 查找增强过渡页面脚本
@@ -249,7 +249,7 @@ class FullscreenBrowser(QMainWindow):
                     sys.executable, script_path, message, duration, "--backup"
                 ])
             
-            print("增强过渡页面进程已启动，将执行桌面图标备份")
+            print("增强过渡页面进程已启动，将执行桌面文件备份")
             
         except Exception as e:
             print(f"启动增强过渡页面时出错: {str(e)}")

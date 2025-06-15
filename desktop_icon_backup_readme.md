@@ -1,35 +1,43 @@
-# 桌面图标备份还原系统
+# 桌面文件备份还原系统
 
-这是一个集成在过渡界面中的桌面图标备份还原系统，能够在程序切换过程中无缝管理桌面图标。
+这是一个集成在过渡界面中的桌面文件备份还原系统，能够在程序切换过程中无缝管理桌面上的所有文件和文件夹（排除系统文件）。
 
 ## 功能特点
 
-- **自动备份**: 在启动 `desktop_manager` 时自动备份桌面图标
-- **自动还原**: 在关闭 `desktop_manager` 时自动还原桌面图标
+- **全面备份**: 在启动 `desktop_manager` 时自动备份桌面上的所有文件和文件夹
+- **智能过滤**: 自动排除系统文件和临时文件，只处理用户文件
+- **自动还原**: 在关闭 `desktop_manager` 时自动还原桌面文件
+- **支持文件夹**: 完整支持文件夹的递归备份和还原
 - **无缝集成**: 操作过程隐藏在过渡界面中，用户体验流畅
 - **进度显示**: 实时显示备份/还原进度
 - **错误处理**: 完善的错误处理机制
+- **广泛兼容**: 支持多种文件格式（文档、图片、音频、视频、压缩包等）
 
 ## 系统组件
 
-### 1. 桌面图标管理器 (`desktop_icon_manager.py`)
+### 1. 桌面文件管理器 (`desktop_icon_manager.py`)
 
-负责核心的图标备份和还原功能：
+负责核心的文件备份和还原功能：
 
-- 自动检测桌面路径
-- 扫描桌面图标文件（支持 .lnk, .url, .exe, .bat, .cmd）
-- 备份图标到专用文件夹
-- 从备份还原图标
-- 保存备份信息的 JSON 文件
+- 自动检测桌面路径（Windows/Linux/Mac兼容）
+- 扫描桌面上的所有文件和文件夹
+- 智能过滤系统文件和临时文件
+- 支持多种文件格式（图标、文档、图片、音频、视频等）
+- 完整的文件夹递归备份
+- 备份文件到专用文件夹
+- 从备份还原文件和文件夹
+- 保存详细备份信息的 JSON 文件
+- 保持文件时间戳和属性
 
 ### 2. 增强过渡界面 (`enhanced_transition_screen.py`)
 
-在原有过渡界面基础上增加图标操作功能：
+在原有过渡界面基础上增加文件操作功能：
 
 - 继承原有的科技感过渡界面样式
-- 后台执行图标备份/还原操作
-- 实时更新操作进度
+- 后台执行文件和文件夹备份/还原操作
+- 实时更新操作进度和状态信息
 - 支持独立进程运行
+- 多线程处理确保界面响应
 
 ### 3. 集成修改
 
@@ -67,14 +75,16 @@
 
 ```
 项目根目录/
-├── desktop_icon_manager.py          # 桌面图标管理器
+├── desktop_icon_manager.py          # 桌面文件管理器
 ├── enhanced_transition_screen.py    # 增强过渡界面
 ├── fullscreen_browser.py            # 修改后的全屏浏览器
 ├── desktop_manager.py               # 修改后的桌面管理器
 ├── transition_screen.py             # 原始过渡界面（被继承）
-├── desktop_icons_backup/            # 自动创建的备份文件夹
+├── desktop_backup/                  # 自动创建的备份文件夹
 │   ├── backup_info.json            # 备份信息文件
-│   └── [图标文件...]                # 备份的图标文件
+│   ├── [备份的文件...]              # 备份的各种文件
+│   └── [备份的文件夹...]            # 备份的文件夹
+├── test_desktop_icon_system.py     # 系统测试脚本
 └── desktop_icon_backup_readme.md   # 本说明文档
 ```
 
@@ -105,19 +115,50 @@ python enhanced_transition_screen.py "正在还原桌面图标..." 5000 --restor
 
 ## 配置说明
 
-### 支持的图标类型
+### 支持的文件类型
 
-系统默认支持以下文件类型：
+系统支持广泛的文件类型，包括但不限于：
+
+**图标和快捷方式**：
 - `.lnk` - Windows 快捷方式
 - `.url` - 网页快捷方式
-- `.exe` - 可执行文件
-- `.bat` - 批处理文件
-- `.cmd` - 命令文件
+
+**可执行文件**：
+- `.exe`, `.bat`, `.cmd`, `.msi`, `.com`
+
+**文档文件**：
+- `.txt`, `.doc`, `.docx`, `.pdf`, `.xls`, `.xlsx`, `.ppt`, `.pptx`
+- `.rtf`, `.odt`, `.ods`, `.odp`
+
+**媒体文件**：
+- 图片：`.jpg`, `.jpeg`, `.png`, `.gif`, `.bmp`, `.tiff`, `.ico`, `.svg`
+- 音频：`.mp3`, `.wav`, `.flac`, `.aac`, `.ogg`, `.wma`
+- 视频：`.mp4`, `.avi`, `.mkv`, `.mov`, `.wmv`, `.flv`, `.webm`
+
+**压缩文件**：
+- `.zip`, `.rar`, `.7z`, `.tar`, `.gz`, `.bz2`
+
+**代码文件**：
+- `.py`, `.js`, `.html`, `.css`, `.java`, `.cpp`, `.c`, `.h`
+
+**其他文件**：
+- `.json`, `.xml`, `.csv`, `.log`, `.ini`, `.cfg`, `.conf`
+- 文件夹和无扩展名文件
+
+### 系统文件过滤
+
+自动排除以下类型的系统文件：
+- `desktop.ini`, `thumbs.db`, `desktop.db` (Windows)
+- `.ds_store` (macOS), `.directory` (Linux KDE)
+- `$recycle.bin`, `system volume information` (Windows)
+- 以 `.` 开头的隐藏文件（除特殊情况）
+- 临时文件（`.tmp`, `.temp`）
+- 以 `~` 开头的临时文件
 
 ### 备份位置
 
-- 备份文件夹：`项目根目录/desktop_icons_backup/`
-- 备份信息：`desktop_icons_backup/backup_info.json`
+- 备份文件夹：`项目根目录/desktop_backup/`
+- 备份信息：`desktop_backup/backup_info.json`
 
 ### 过渡界面样式
 
