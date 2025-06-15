@@ -562,7 +562,7 @@ class DeviceAddDialog(QDialog):
         name_label = QLabel("设备名称*")
         name_label.setStyleSheet(label_style)
         self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("请输入设备名称，例如：核心交换机01")
+        self.name_edit.setPlaceholderText("请输入添加设备的名称")
         self.name_edit.setStyleSheet(input_style)
         form_layout.addRow(name_label, self.name_edit)
         
