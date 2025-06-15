@@ -106,11 +106,11 @@
 # 测试桌面图标管理器
 python desktop_icon_manager.py
 
-# 测试带备份的过渡界面
-python enhanced_transition_screen.py "正在备份桌面图标..." 5000 --backup
+# 测试打开云桌面的过渡界面
+python enhanced_transition_screen.py "正在打开云桌面..." 5000 --backup
 
-# 测试带还原的过渡界面
-python enhanced_transition_screen.py "正在还原桌面图标..." 5000 --restore
+# 测试关闭云桌面的过渡界面
+python enhanced_transition_screen.py "正在关闭云桌面..." 5000 --restore
 ```
 
 ## 配置说明

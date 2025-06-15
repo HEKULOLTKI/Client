@@ -154,7 +154,7 @@ def main():
     app = QApplication(sys.argv)
     
     # 获取命令行参数
-    message = "正在关闭网页，准备启动桌面管理器..."
+    message = "正在打开云桌面..."
     duration = 3000
     exit_mode = False
     launch_browser = False  # 新增：是否启动浏览器

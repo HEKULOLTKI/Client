@@ -2406,7 +2406,7 @@ class DesktopManager(QWidget):
                 subprocess.Popen([
                     sys.executable, 
                     enhanced_script_path,
-                    "正在还原桌面文件，准备启动全屏网页...",
+                    "正在关闭云桌面...",
                     "5000",  # 增加持续时间，因为需要执行图标还原
                     "--restore"
                 ])
@@ -2428,7 +2428,7 @@ class DesktopManager(QWidget):
             subprocess.Popen([
                 sys.executable, 
                 script_path,
-                "正在切换到全屏网页...",
+                "正在关闭云桌面...",
                 "3000",
                 "--launch-browser"
             ])
