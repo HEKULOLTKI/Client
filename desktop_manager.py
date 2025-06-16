@@ -1394,84 +1394,7 @@ class TaskSelectionDialog(QDialog):
         """)
         smart_layout.addWidget(select_all_btn)
         
-        # 取消全选按钮
-        clear_all_btn = QPushButton("❌ 取消全选")
-        clear_all_btn.setFixedSize(110, 40)
-        clear_all_btn.setToolTip("取消选择所有任务")
-        clear_all_btn.clicked.connect(self.clear_all_tasks)
-        clear_all_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #fd79a8, stop:1 #e84393);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 12px;
-                font-weight: bold;
-                font-family: '微软雅黑';
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #e84393, stop:1 #d63384);
-                transform: translateY(-1px);
-                box-shadow: 0 4px 12px rgba(253, 121, 168, 0.4);
-            }
-            QPushButton:pressed {
-                transform: translateY(0px);
-                box-shadow: 0 2px 6px rgba(253, 121, 168, 0.3);
-            }
-        """)
-        smart_layout.addWidget(clear_all_btn)
-        
-        # 智能选择按钮组
-        smart_high_priority_btn = QPushButton("⭐ 高优先级")
-        smart_high_priority_btn.setFixedSize(100, 40)
-        smart_high_priority_btn.setToolTip("仅选择高优先级任务")
-        smart_high_priority_btn.clicked.connect(self.select_high_priority_tasks)
-        smart_high_priority_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #fdcb6e, stop:1 #e17055);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 11px;
-                font-weight: bold;
-                font-family: '微软雅黑';
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #e17055, stop:1 #d63031);
-                transform: translateY(-1px);
-                box-shadow: 0 4px 12px rgba(253, 203, 110, 0.4);
-            }
-        """)
-        smart_layout.addWidget(smart_high_priority_btn)
-        
-        # 按类型选择按钮
-        smart_by_type_btn = QPushButton("🔧 按类型")
-        smart_by_type_btn.setFixedSize(100, 40)
-        smart_by_type_btn.setToolTip("按任务类型智能选择")
-        smart_by_type_btn.clicked.connect(self.show_type_selection_menu)
-        smart_by_type_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #a29bfe, stop:1 #6c5ce7);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 11px;
-                font-weight: bold;
-                font-family: '微软雅黑';
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #6c5ce7, stop:1 #5f3dc4);
-                transform: translateY(-1px);
-                box-shadow: 0 4px 12px rgba(162, 155, 254, 0.4);
-            }
-        """)
-        smart_layout.addWidget(smart_by_type_btn)
+
         
         buttons_layout.addWidget(smart_select_group)
         
@@ -1504,31 +1427,6 @@ class TaskSelectionDialog(QDialog):
         action_layout = QHBoxLayout(action_group)
         action_layout.setContentsMargins(0, 0, 0, 0)
         action_layout.setSpacing(10)
-        
-        # 预览按钮
-        preview_btn = QPushButton("👁️ 预览")
-        preview_btn.setFixedSize(100, 40)
-        preview_btn.setToolTip("预览选中任务的详细信息")
-        preview_btn.clicked.connect(self.preview_selected_tasks)
-        preview_btn.setStyleSheet("""
-            QPushButton {
-                background: #ffffff;
-                color: #667eea;
-                border: 2px solid #667eea;
-                border-radius: 8px;
-                font-size: 12px;
-                font-weight: bold;
-                font-family: '微软雅黑';
-            }
-            QPushButton:hover {
-                background: #f8f9ff;
-                border-color: #5a6fd8;
-                color: #5a6fd8;
-                transform: translateY(-1px);
-                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
-            }
-        """)
-        action_layout.addWidget(preview_btn)
         
         # 取消按钮
         cancel_btn = QPushButton("🚫 取消")
@@ -1598,119 +1496,13 @@ class TaskSelectionDialog(QDialog):
         # 连接复选框变化事件来更新选中数量
         self.update_selected_count()
         
-    def select_high_priority_tasks(self):
-        """选择高优先级任务"""
-        for task_id, checkbox in self.task_checkboxes.items():
-            # 找到对应的任务
-            task = None
-            for t in self.tasks:
-                if (t.get('id') == task_id or 
-                    t.get('task_id') == task_id or 
-                    t.get('assignment_id') == task_id):
-                    task = t
-                    break
-            
-            if task:
-                priority = task.get('priority', 'normal').lower()
-                if priority in ['high', '高', 'urgent', '紧急']:
-                    checkbox.setChecked(True)
-                else:
-                    checkbox.setChecked(False)
+
         
-        self.update_selected_count()
+
         
-    def show_type_selection_menu(self):
-        """显示任务类型选择菜单"""
-        from PyQt5.QtWidgets import QMenu, QAction
+
         
-        # 获取所有任务类型
-        task_types = set()
-        for task in self.tasks:
-            task_type = task.get('type', task.get('task_type', ''))
-            if task_type:
-                task_types.add(task_type)
-        
-        if not task_types:
-            QMessageBox.information(self, "提示", "没有找到任务类型信息")
-            return
-        
-        # 创建菜单
-        menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: white;
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                padding: 5px;
-            }
-            QMenu::item {
-                background-color: transparent;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-family: '微软雅黑';
-            }
-            QMenu::item:selected {
-                background-color: #667eea;
-                color: white;
-            }
-        """)
-        
-        for task_type in sorted(task_types):
-            action = QAction(f"🔧 {task_type}", self)
-            action.triggered.connect(lambda checked, t=task_type: self.select_tasks_by_type(t))
-            menu.addAction(action)
-        
-        # 显示菜单
-        button = self.sender()
-        menu.exec_(button.mapToGlobal(button.rect().bottomLeft()))
-        
-    def select_tasks_by_type(self, task_type):
-        """按任务类型选择任务"""
-        selected_count = 0
-        for task_id, checkbox in self.task_checkboxes.items():
-            # 找到对应的任务
-            task = None
-            for t in self.tasks:
-                if (t.get('id') == task_id or 
-                    t.get('task_id') == task_id or 
-                    t.get('assignment_id') == task_id):
-                    task = t
-                    break
-            
-            if task:
-                current_type = task.get('type', task.get('task_type', ''))
-                if current_type == task_type:
-                    checkbox.setChecked(True)
-                    selected_count += 1
-                else:
-                    checkbox.setChecked(False)
-        
-        self.update_selected_count()
-        
-        # 显示选择结果
-        QMessageBox.information(self, "选择完成", 
-                               f"已选择 {selected_count} 个\"{task_type}\"类型的任务")
-        
-    def preview_selected_tasks(self):
-        """预览选中的任务"""
-        selected_tasks = []
-        for task_id, checkbox in self.task_checkboxes.items():
-            if checkbox.isChecked():
-                # 找到对应的任务
-                for task in self.tasks:
-                    if (task.get('id') == task_id or 
-                        task.get('task_id') == task_id or 
-                        task.get('assignment_id') == task_id):
-                        selected_tasks.append(task)
-                        break
-        
-        if not selected_tasks:
-            QMessageBox.information(self, "提示", "请先选择要预览的任务")
-            return
-        
-        # 创建预览对话框
-        preview_dialog = TaskPreviewDialog(selected_tasks, self)
-        preview_dialog.exec_()
+
     def create_task_item(self, layout, task):
         """创建任务项"""
         # 创建任务框架
@@ -1864,11 +1656,7 @@ class TaskSelectionDialog(QDialog):
             checkbox.setChecked(True)
         self.update_selected_count()
             
-    def clear_all_tasks(self):
-        """取消全选"""
-        for checkbox in self.task_checkboxes.values():
-            checkbox.setChecked(False)
-        self.update_selected_count()
+
         
     def update_selected_count(self):
         """更新选中任务数量"""
@@ -3061,7 +2849,13 @@ class DesktopManager(QWidget):
         # 延迟检查是否有待处理的任务，避免在初始化时阻塞界面
         print("🚀 Desktop Manager 已启动，将在1秒后检查任务通知...")
         print(f"📋 自动打开任务对话框: {'启用' if self.auto_open_task_dialog else '禁用'}")
-        QTimer.singleShot(1000, self.check_and_notify_tasks)
+        
+        # 创建定时器并连接槽函数
+        self.notification_timer = QTimer()
+        self.notification_timer.setSingleShot(True)
+        self.notification_timer.timeout.connect(self.check_and_notify_tasks)
+        self.notification_timer.start(1000)
+        print("⏰ 任务通知定时器已启动")
         
     def setup_data_receivers(self):
         """设置增强的数据接收器"""
@@ -4250,6 +4044,50 @@ class DesktopManager(QWidget):
         
         # 2秒后恢复状态显示
         QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+    
+    @pyqtSlot(list)
+    def on_notification_tasks_loaded(self, tasks):
+        """任务通知获取任务列表完成 - 专门用于任务通知"""
+        self.status_label.setText("系统运行正常")
+        
+        if not tasks:
+            print("⚠️ 没有从API获取到任务，显示暂无任务通知")
+            self.show_no_task_notification()
+            return
+            
+        # 过滤出待提交的任务 - 使用与提交任务相同的筛选条件
+        pending_status_list = [api_config.TASK_STATUS.get("PENDING", "待分配"), "未分配", "进行中"]
+        pending_tasks = [task for task in tasks if task.get('status') in pending_status_list]
+        
+        print(f"📋 API任务筛选结果：")
+        print(f"   总任务数: {len(tasks)}")
+        print(f"   待处理任务数: {len(pending_tasks)}")
+        print(f"   筛选条件: {pending_status_list}")
+        
+        if pending_tasks:
+            print(f"🎯 发现 {len(pending_tasks)} 个待处理任务，显示通知")
+            self.show_task_notification(tasks, pending_tasks)
+        else:
+            # 显示所有任务的状态用于调试
+            print("🔍 所有任务状态详情：")
+            for i, task in enumerate(tasks, 1):
+                task_name = task.get('name', task.get('task_name', '未命名'))
+                print(f"   {i}. {task_name} - 状态: '{task.get('status', '未知')}'")
+            print("⚠️ 没有待处理任务，显示暂无任务通知")
+            self.show_no_task_notification()
+                
+    @pyqtSlot(str)
+    def on_notification_task_list_error(self, error_message):
+        """任务通知获取任务列表失败 - 专门用于任务通知"""
+        self.status_label.setText("获取任务列表失败")
+        print(f"❌ 任务通知获取任务列表失败：{error_message}")
+        
+        # 显示暂无任务通知，而不是错误弹窗
+        print("🔔 因获取任务失败，显示暂无任务通知")
+        self.show_no_task_notification()
+        
+        # 2秒后恢复状态显示
+        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
         
     def exit_application(self):
         """退出应用程序并启动全屏浏览器"""
@@ -4425,164 +4263,87 @@ class DesktopManager(QWidget):
         self.exit_application()
     
     def check_and_notify_tasks(self):
-        """检查是否有待处理的任务并弹出通知 - 支持用户数据同步格式"""
+        """检查是否有待处理的任务并弹出通知 - 与提交任务获取方式保持一致"""
         try:
             print("⏰ 定时器触发：正在检查是否有待处理的智能任务...")
             print(f"   当前工作目录: {os.getcwd()}")
             
-            # 检查received_data.json文件（用户数据同步格式）
-            data_file_path = os.path.join(os.getcwd(), 'received_data.json')
-            if os.path.exists(data_file_path):
-                print(f"✅ 找到数据文件: {data_file_path}")
-                
-                # 读取并检测数据格式
-                with open(data_file_path, 'r', encoding='utf-8') as f:
-                    raw_data = json.load(f)
-                
-                data_format = DataProcessor.detect_data_format(raw_data)
-                print(f"🔍 检测到数据格式: {data_format}")
-                
-                if data_format == 'user_data_sync':
-                    print("🔄 检测到用户数据同步格式，准备通过API获取任务...")
-                    self._handle_user_sync_tasks(raw_data)
-                    return
-                elif data_format == 'task_assignment':
-                    print("📋 检测到任务分配格式，使用现有任务数据...")
-                    # 继续使用现有逻辑处理任务分配格式
-                else:
-                    print(f"⚠️ 未知数据格式: {data_format}")
+            # 显示加载状态
+            self.status_label.setText("正在智能获取任务列表...")
             
-            # 检查received_tasks.json文件（传统格式）
-            task_file_path = os.path.join(os.getcwd(), 'received_tasks.json')
-            if not os.path.exists(task_file_path):
-                print(f"❌ 任务文件不存在: {task_file_path}")
-                print("💡 提示：请先发送用户数据同步或任务分配数据")
-                return
-            
-            print(f"✅ 找到任务文件: {task_file_path}")
-            
-            # 检查是否有从前端接收到的任务数据
+            # 使用与提交任务相同的获取方式 - 首先检查是否有从前端接收到的任务数据
             received_tasks = self.load_received_tasks()
-            
-            if received_tasks and len(received_tasks) > 0:
-                print(f"✅ 成功加载 {len(received_tasks)} 个任务")
+            if received_tasks:
+                print(f"✓ 使用从前端接收到的智能任务数据，共 {len(received_tasks)} 个任务")
+                self.status_label.setText(f"已加载 {len(received_tasks)} 个智能推荐任务")
                 
-                # 过滤出待处理的任务
+                # 过滤出待提交的任务 - 使用与提交任务相同的筛选条件
                 pending_status_list = [api_config.TASK_STATUS.get("PENDING", "待分配"), "未分配", "进行中"]
-                print(f"🔍 筛选条件：状态包含 {pending_status_list}")
+                pending_tasks = [task for task in received_tasks if task.get('status') in pending_status_list]
                 
-                pending_tasks = []
-                for task in received_tasks:
-                    task_status = task.get('status', '未知')
-                    task_name = task.get('name', task.get('task_name', '未命名'))  # 支持两种字段名
-                    print(f"   检查任务: {task_name} - 状态: {task_status}")
-                    
-                    if task_status in pending_status_list:
-                        pending_tasks.append(task)
-                        print(f"     ✅ 符合条件，添加到待处理列表")
-                    else:
-                        print(f"     ❌ 不符合条件，跳过")
+                print(f"📋 任务筛选结果：")
+                print(f"   总任务数: {len(received_tasks)}")
+                print(f"   待处理任务数: {len(pending_tasks)}")
+                print(f"   筛选条件: {pending_status_list}")
                 
                 if pending_tasks:
                     print(f"🎯 发现 {len(pending_tasks)} 个待处理的智能推荐任务，准备弹出通知")
                     self.show_task_notification(received_tasks, pending_tasks)
                 else:
-                    print("⚠️ 所有智能推荐任务都已完成，不弹出通知")
-            else:
-                print("❌ 未发现智能推荐任务数据")
-                
+                    # 显示所有任务的状态用于调试
+                    print("🔍 所有任务状态详情：")
+                    for i, task in enumerate(received_tasks, 1):
+                        task_name = task.get('name', task.get('task_name', '未命名'))
+                        print(f"   {i}. {task_name} - 状态: '{task.get('status', '未知')}'")
+                    print("⚠️ 没有待处理任务，弹出暂无任务通知")
+                    self.show_no_task_notification()
+                return
+            
+            print("⚠ 未找到前端智能推荐任务，回退到API获取任务列表...")
+            self.status_label.setText("正在从服务器获取任务列表...")
+            
+            # 创建任务列表获取工作线程 - 与提交任务保持一致
+            self.task_list_worker = TaskListWorker()
+            
+            # 连接信号 - 使用专门的通知处理方法
+            self.task_list_worker.tasks_loaded.connect(self.on_notification_tasks_loaded)
+            self.task_list_worker.error_occurred.connect(self.on_notification_task_list_error)
+            
+            # 开始获取任务列表
+            self.task_list_worker.start()
+            
         except Exception as e:
             print(f"❌ 检查任务时出错: {str(e)}")
             import traceback
             traceback.print_exc()
-    
-    def _handle_user_sync_tasks(self, user_sync_data):
-        """处理用户数据同步格式，通过API获取任务"""
+            self.show_no_task_notification()
+
+    def show_no_task_notification(self):
+        """弹出暂无任务的通知弹窗"""
         try:
-            # 处理用户数据同步
-            processed_data = DataProcessor.process_user_data_sync(user_sync_data)
-            user_info = processed_data.get('user_info', {})
-            user_data = user_info.get('user', {})
+            print("🔔 准备显示暂无任务通知弹窗...")
+            # 确保弹窗显示在最前面
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("任务通知")
+            msg_box.setText("暂无待处理任务！\n\n系统已启动，当前没有需要处理的任务。")
+            msg_box.setIcon(QMessageBox.Information)
+            msg_box.setStandardButtons(QMessageBox.Ok)
             
-            username = user_data.get('username')
-            password = user_data.get('password')
-            user_id = user_data.get('id')
+            # 设置窗口属性，确保显示在最前面
+            msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowStaysOnTopHint)
             
-            print(f"👤 用户信息: {username} (ID: {user_id})")
+            print("🔔 正在显示暂无任务通知弹窗...")
+            result = msg_box.exec_()
+            print(f"🔔 弹窗已关闭，返回值: {result}")
             
-            if not username or not password:
-                print("❌ 缺少用户认证信息，无法获取任务")
-                return
-            
-            # 创建API客户端并获取任务
-            print("🌐 正在通过API获取用户任务...")
-            api_client = APIClient()
-            
-            # 认证 - 传递用户类型和操作员类型
-            user_type = user_data.get('type')
-            # 从sync_info中获取operator_type（更准确）
-            operator_type = None
-            try:
-                with open('received_data.json', 'r', encoding='utf-8') as f:
-                    sync_data = json.load(f)
-                    operator_type = sync_data.get('sync_info', {}).get('operator', {}).get('operator_type')
-            except:
-                pass
-            
-            if api_client.authenticate(username, password, user_type, operator_type):
-                print("✅ 用户认证成功")
-                
-                # 获取任务
-                api_tasks = api_client.get_my_tasks()
-                if api_tasks:
-                    print(f"📋 从API获取到 {len(api_tasks)} 个任务")
-                    
-                    # 转换API任务格式为内部格式
-                    converted_tasks = []
-                    for api_task in api_tasks:
-                        converted_task = self._convert_api_task_to_internal_format(api_task)
-                        if converted_task:
-                            converted_tasks.append(converted_task)
-                    
-                    if converted_tasks:
-                        print(f"✅ 成功转换 {len(converted_tasks)} 个任务")
-                        
-                        # 保存转换后的任务到received_tasks.json
-                        task_data = {
-                            'tasks': converted_tasks,
-                            'user_info': user_info,
-                            'data_source': 'api_fetch',
-                            'fetch_time': datetime.now().isoformat(),
-                            'api_task_count': len(api_tasks),
-                            'converted_task_count': len(converted_tasks)
-                        }
-                        
-                        task_file_path = os.path.join(os.getcwd(), 'received_tasks.json')
-                        with open(task_file_path, 'w', encoding='utf-8') as f:
-                            json.dump(task_data, f, ensure_ascii=False, indent=2)
-                        
-                        print(f"💾 任务数据已保存到: {task_file_path}")
-                        
-                        # 过滤待处理任务并显示通知
-                        pending_status_list = ["待分配", "未分配", "进行中", "pending", "in_progress"]
-                        pending_tasks = [task for task in converted_tasks if task.get('status') in pending_status_list]
-                        
-                        if pending_tasks:
-                            print(f"🎯 发现 {len(pending_tasks)} 个待处理任务，显示通知")
-                            self.show_task_notification(converted_tasks, pending_tasks)
-                        else:
-                            print("⚠️ 所有任务都已完成，不显示通知")
-                    else:
-                        print("❌ 任务转换失败")
-                else:
-                    print("⚠️ 用户暂无任务")
-            else:
-                print("❌ 用户认证失败，无法获取任务")
-                
+            self.status_label.setText("暂无待处理任务")
         except Exception as e:
-            print(f"❌ 处理用户数据同步任务时出错: {str(e)}")
+            print(f"❌ 显示暂无任务通知时出错: {str(e)}")
             import traceback
             traceback.print_exc()
+            self.status_label.setText("暂无待处理任务")
+    
+
     
     def show_task_notification(self, all_tasks, pending_tasks):
         """显示任务通知弹窗 - 根据配置决定是否自动打开任务提交对话框"""
