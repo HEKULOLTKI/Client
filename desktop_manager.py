@@ -22,10 +22,1163 @@ from openai_api import OpenAIChat
 from tuopo_widget import TuopoWidget
 import api_config
 import logging
+import time
+from datetime import datetime
+import re
 
 # 禁用Flask的默认日志输出
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
+
+# 数据验证常量
+class DataValidation:
+    """数据验证常量和方法"""
+    
+    # 支持的任务状态
+    VALID_ASSIGNMENT_STATUSES = [
+        "待分配", "未分配", "进行中", "已完成", 
+        "暂停", "取消", "pending", "in_progress", 
+        "completed", "paused", "cancelled"
+    ]
+    
+    # 支持的优先级
+    VALID_PRIORITIES = [
+        "high", "normal", "low", "urgent", 
+        "高", "中", "低", "紧急"
+    ]
+    
+    # 支持的用户状态
+    VALID_USER_STATUSES = [
+        "active", "inactive", "locked", "disabled",
+        "激活", "未激活", "锁定", "禁用"
+    ]
+    
+    # 支持的时间格式
+    TIME_FORMATS = [
+        "%Y-%m-%dT%H:%M:%S.%fZ",     # ISO 8601 带毫秒和时区
+        "%Y-%m-%dT%H:%M:%SZ",        # ISO 8601 带时区
+        "%Y-%m-%dT%H:%M:%S",         # ISO 8601 基本格式
+        "%Y-%m-%d %H:%M:%S",         # 标准日期时间格式
+    ]
+    
+    @staticmethod
+    def validate_task_assignment_data(data):
+        """验证任务分配数据格式"""
+        try:
+            # 检查顶级必需字段
+            required_fields = ['action', 'deployment_info', 'assigned_tasks', 'deployment_summary']
+            for field in required_fields:
+                if field not in data:
+                    raise ValueError(f"缺少必需字段: {field}")
+            
+            # 验证action字段
+            if data['action'] != 'task_deployment':
+                raise ValueError("action字段值必须为'task_deployment'")
+            
+            # 验证deployment_info
+            deployment_info = data['deployment_info']
+            required_deployment_fields = ['target_role', 'deployment_time', 'operator']
+            for field in required_deployment_fields:
+                if field not in deployment_info:
+                    raise ValueError(f"deployment_info缺少字段: {field}")
+            
+            # 验证operator信息
+            operator = deployment_info['operator']
+            required_operator_fields = ['user_id', 'username', 'operator_role']
+            for field in required_operator_fields:
+                if field not in operator:
+                    raise ValueError(f"operator缺少字段: {field}")
+            
+            # 验证user_id是数字类型
+            if not isinstance(operator['user_id'], (int, float)):
+                raise ValueError("user_id必须是数字类型")
+            
+            # 验证时间格式
+            DataValidation.validate_time_format(deployment_info['deployment_time'])
+            
+            # 验证任务数组
+            if not data['assigned_tasks']:
+                raise ValueError("assigned_tasks不能为空")
+            
+            # 验证每个任务的必需字段
+            for i, task in enumerate(data['assigned_tasks']):
+                required_task_fields = [
+                    'assignment_id', 'assignment_status', 'assigned_at',
+                    'task_id', 'task_name', 'task_type'
+                ]
+                for field in required_task_fields:
+                    if field not in task:
+                        raise ValueError(f"任务{i}缺少字段: {field}")
+                
+                # 验证ID字段是数字类型
+                for id_field in ['assignment_id', 'task_id']:
+                    if not isinstance(task[id_field], (int, float)):
+                        raise ValueError(f"任务{i}的{id_field}必须是数字类型")
+                
+                # 验证状态值
+                if task['assignment_status'] not in DataValidation.VALID_ASSIGNMENT_STATUSES:
+                    print(f"⚠️ 警告: 任务{i}的状态值'{task['assignment_status']}'不在标准列表中")
+                
+                # 验证优先级（如果存在）
+                if 'priority' in task and task['priority'] not in DataValidation.VALID_PRIORITIES:
+                    print(f"⚠️ 警告: 任务{i}的优先级'{task['priority']}'不在标准列表中")
+                
+                # 验证时间格式
+                DataValidation.validate_time_format(task['assigned_at'])
+                if 'last_update' in task and task['last_update']:
+                    DataValidation.validate_time_format(task['last_update'])
+            
+            # 验证deployment_summary
+            summary = data['deployment_summary']
+            required_summary_fields = ['total_assigned_tasks', 'deployment_id', 'data_source']
+            for field in required_summary_fields:
+                if field not in summary:
+                    raise ValueError(f"deployment_summary缺少字段: {field}")
+            
+            # 验证任务数量一致性
+            if summary['total_assigned_tasks'] != len(data['assigned_tasks']):
+                print(f"⚠️ 警告: deployment_summary中的任务数量({summary['total_assigned_tasks']})与实际任务数量({len(data['assigned_tasks'])})不一致")
+            
+            return True
+            
+        except Exception as e:
+            raise ValueError(f"数据验证失败: {str(e)}")
+    
+    @staticmethod
+    def validate_time_format(time_str):
+        """验证时间格式"""
+        if not time_str:
+            return True  # 空时间允许
+        
+        # 尝试Unix时间戳
+        try:
+            if isinstance(time_str, (int, float)):
+                datetime.fromtimestamp(time_str)
+                return True
+        except:
+            pass
+        
+        # 尝试各种时间格式
+        for fmt in DataValidation.TIME_FORMATS:
+            try:
+                datetime.strptime(time_str, fmt)
+                return True
+            except:
+                continue
+        
+        raise ValueError(f"不支持的时间格式: {time_str}")
+    
+    @staticmethod
+    def validate_user_data_sync(data):
+        """验证用户数据同步格式"""
+        try:
+            # 检查顶级必需字段
+            required_fields = ['action', 'sync_info', 'users', 'sync_summary']
+            for field in required_fields:
+                if field not in data:
+                    raise ValueError(f"缺少必需字段: {field}")
+            
+            # 验证action字段
+            if data['action'] != 'user_data_sync':
+                raise ValueError("action字段值必须为'user_data_sync'")
+            
+            # 验证sync_info
+            sync_info = data['sync_info']
+            required_sync_fields = ['sync_type', 'sync_time', 'operator']
+            for field in required_sync_fields:
+                if field not in sync_info:
+                    raise ValueError(f"sync_info缺少字段: {field}")
+            
+            # 验证operator信息
+            operator = sync_info['operator']
+            required_operator_fields = ['user_id', 'username', 'operator_role']
+            for field in required_operator_fields:
+                if field not in operator:
+                    raise ValueError(f"operator缺少字段: {field}")
+            
+            # 验证user_id是数字类型
+            if not isinstance(operator['user_id'], (int, float)):
+                raise ValueError("user_id必须是数字类型")
+            
+            # 验证时间格式
+            DataValidation.validate_time_format(sync_info['sync_time'])
+            
+            # 验证用户数组
+            if not data['users']:
+                raise ValueError("users不能为空")
+            
+            # 验证每个用户的必需字段
+            for i, user in enumerate(data['users']):
+                required_user_fields = ['id', 'username', 'role', 'type', 'status']
+                for field in required_user_fields:
+                    if field not in user:
+                        raise ValueError(f"用户{i}缺少字段: {field}")
+                
+                # 验证用户ID是数字类型
+                if not isinstance(user['id'], (int, float)):
+                    raise ValueError(f"用户{i}的id必须是数字类型")
+                
+                # 验证用户状态
+                status = user.get('status')
+                if status and status not in DataValidation.VALID_USER_STATUSES:
+                    print(f"⚠️ 警告: 用户{i}的状态值'{status}'不在标准列表中")
+                
+                # 验证时间格式
+                for time_field in ['created_at', 'updated_at']:
+                    if time_field in user and user[time_field]:
+                        DataValidation.validate_time_format(user[time_field])
+            
+            # 验证sync_summary
+            summary = data['sync_summary']
+            required_summary_fields = ['total_users', 'sync_id']
+            for field in required_summary_fields:
+                if field not in summary:
+                    raise ValueError(f"sync_summary缺少字段: {field}")
+            
+            # 验证用户数量一致性
+            if summary['total_users'] != len(data['users']):
+                print(f"⚠️ 警告: sync_summary中的用户数量({summary['total_users']})与实际用户数量({len(data['users'])})不一致")
+            
+            return True
+            
+        except Exception as e:
+            raise ValueError(f"用户数据同步验证失败: {str(e)}")
+    
+    @staticmethod
+    def validate_json_format(data):
+        """验证JSON格式"""
+        try:
+            json_str = json.dumps(data, ensure_ascii=False, indent=2)
+            json.loads(json_str)  # 验证能否正确解析
+            return True
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"JSON格式错误: {e}")
+
+class DataProcessor:
+    """数据处理器 - 处理不同格式的数据转换"""
+    
+    @staticmethod
+    def detect_data_format(data):
+        """检测数据格式"""
+        if data.get('action') == 'task_deployment' and 'assigned_tasks' in data:
+            return 'task_assignment'
+        elif data.get('action') == 'user_data_sync' and 'users' in data:
+            return 'user_data_sync'
+        elif 'tasks' in data and data['tasks']:
+            return 'legacy'
+        else:
+            return 'unknown'
+    
+    @staticmethod
+    def process_task_assignment_format(data):
+        """处理任务分配格式数据"""
+        try:
+            # 数据验证
+            DataValidation.validate_task_assignment_data(data)
+            print("✅ 任务分配数据验证通过")
+            
+            assigned_tasks = data['assigned_tasks']
+            deployment_info = data['deployment_info']
+            operator = deployment_info.get('operator', {})
+            
+            print(f"🆕 处理任务分配格式数据:")
+            print(f"   📋 任务数量: {len(assigned_tasks)}")
+            print(f"   🎯 目标角色: {deployment_info.get('target_role')}")
+            print(f"   👤 操作员: {operator.get('username')}")
+            
+            # 转换任务数据格式
+            converted_tasks = []
+            for i, task in enumerate(assigned_tasks):
+                try:
+                    converted_task = DataProcessor.convert_assignment_task(task)
+                    converted_tasks.append(converted_task)
+                    print(f"   ✅ 任务{i+1}: {converted_task.get('name')} - 状态: {converted_task.get('status')}")
+                except Exception as e:
+                    print(f"   ❌ 任务{i+1}转换失败: {str(e)}")
+                    continue
+            
+            # 创建用户信息结构
+            user_info = DataProcessor.create_user_info_from_deployment(deployment_info, data.get('deployment_summary', {}))
+            
+            # 创建最终数据结构
+            result = {
+                'tasks': converted_tasks,
+                'user_info': user_info,
+                'updated_at': deployment_info.get('deployment_time', ''),
+                'data_source': 'task_assignments_table',
+                'original_format': 'task_deployment',
+                'validation_passed': True,
+                'processing_time': datetime.now().isoformat()
+            }
+            
+            print(f"✅ 任务分配数据处理完成，转换了 {len(converted_tasks)} 个任务")
+            return result
+            
+        except Exception as e:
+            print(f"❌ 处理任务分配数据失败: {str(e)}")
+            raise
+    
+    @staticmethod
+    def convert_assignment_task(task):
+        """转换单个任务分配数据"""
+        return {
+            # 任务基本信息
+            'id': task.get('task_id'),
+            'name': task.get('task_name', '未命名任务'),
+            'task_name': task.get('task_name', '未命名任务'),
+            'description': task.get('task_description', ''),
+            'type': task.get('task_type', '未知类型'),
+            'task_type': task.get('task_type', '未知类型'),
+            'phase': task.get('task_phase', ''),
+            'task_phase': task.get('task_phase', ''),
+            'role_binding': task.get('role_binding', ''),
+            
+            # 任务分配信息
+            'assignment_id': task.get('assignment_id'),
+            'status': task.get('assignment_status', '未知状态'),
+            'assignment_status': task.get('assignment_status', '未知状态'),
+            'progress': task.get('assignment_progress', task.get('completion_percentage', 0)),
+            'completion_percentage': task.get('completion_percentage', task.get('assignment_progress', 0)),
+            'performance_score': task.get('performance_score', 0),
+            'assigned_at': task.get('assigned_at'),
+            'last_update': task.get('last_update'),
+            'comments': task.get('comments', ''),
+            
+            # 任务执行参数
+            'priority': task.get('priority', 'normal'),
+            'estimated_duration': task.get('estimated_duration', ''),
+            'requirements': task.get('requirements', []),
+            'deliverables': task.get('deliverables', []),
+            'execution_status': task.get('execution_status', 'pending'),
+            
+            # 元数据
+            'original_data': task,  # 保留原始数据用于调试
+            'converted_at': datetime.now().isoformat()
+        }
+    
+    @staticmethod
+    def create_user_info_from_deployment(deployment_info, deployment_summary):
+        """从部署信息创建用户信息结构"""
+        operator = deployment_info.get('operator', {})
+        
+        return {
+            'user': {
+                'id': operator.get('user_id'),
+                'username': operator.get('username', '未知用户'),
+                'role': operator.get('operator_role', '未知角色'),
+                'type': operator.get('operator_type', '操作员')
+            },
+            'selectedRole': {
+                'label': deployment_info.get('target_role', '未知角色'),
+                'value': deployment_info.get('target_role', '未知角色'),
+                'description': f"当前任务角色：{deployment_info.get('target_role', '未知')}"
+            },
+            'session': deployment_info.get('session', {}),
+            'deployment_info': deployment_info,
+            'deployment_summary': deployment_summary,
+            'timestamp': deployment_info.get('deployment_time', ''),
+            'target_ip': deployment_summary.get('target_ip', ''),
+            'deployment_id': deployment_summary.get('deployment_id', '')
+        }
+    
+    @staticmethod
+    def process_user_data_sync(data):
+        """处理用户数据同步格式"""
+        try:
+            # 数据验证
+            DataValidation.validate_user_data_sync(data)
+            print("✅ 用户数据同步验证通过")
+            
+            users = data['users']
+            sync_info = data['sync_info']
+            operator = sync_info.get('operator', {})
+            
+            print(f"🔄 处理用户数据同步:")
+            print(f"   👥 用户数量: {len(users)}")
+            print(f"   🔄 同步类型: {sync_info.get('sync_type')}")
+            print(f"   👤 操作员: {operator.get('username')}")
+            
+            # 获取当前用户信息（通常是第一个用户）
+            current_user = users[0] if users else {}
+            
+            # 创建用户信息结构
+            user_info = DataProcessor.create_user_info_from_sync(sync_info, current_user, data.get('sync_summary', {}))
+            
+            # 创建最终数据结构（不包含任务，需要通过API获取）
+            result = {
+                'tasks': [],  # 空任务列表，将通过API获取
+                'user_info': user_info,
+                'updated_at': sync_info.get('sync_time', ''),
+                'data_source': 'user_data_sync',
+                'original_format': 'user_data_sync',
+                'validation_passed': True,
+                'processing_time': datetime.now().isoformat(),
+                'needs_api_fetch': True,  # 标记需要通过API获取任务
+                'api_user_info': {
+                    'user_id': current_user.get('id'),
+                    'username': current_user.get('username'),
+                    'password': current_user.get('password'),
+                    'role': current_user.get('role'),
+                    'type': current_user.get('type'),
+                    'status': current_user.get('status')
+                }
+            }
+            
+            print(f"✅ 用户数据同步处理完成，用户: {current_user.get('username')}")
+            return result
+            
+        except Exception as e:
+            print(f"❌ 处理用户数据同步失败: {str(e)}")
+            raise
+    
+    @staticmethod
+    def create_user_info_from_sync(sync_info, user_data, sync_summary):
+        """从同步信息创建用户信息结构"""
+        operator = sync_info.get('operator', {})
+        
+        return {
+            'user': {
+                'id': user_data.get('id'),
+                'username': user_data.get('username', '未知用户'),
+                'role': user_data.get('role', '未知角色'),
+                'type': user_data.get('type', '操作员'),
+                'status': user_data.get('status', 'active'),
+                'email': user_data.get('email'),
+                'phone': user_data.get('phone'),
+                'department': user_data.get('department'),
+                'position': user_data.get('position')
+            },
+            'selectedRole': {
+                'label': user_data.get('role', '未知角色'),
+                'value': user_data.get('role', '未知角色'),
+                'description': f"当前用户角色：{user_data.get('role', '未知')}"
+            },
+            'session': sync_info.get('session', {}),
+            'sync_info': sync_info,
+            'sync_summary': sync_summary,
+            'timestamp': sync_info.get('sync_time', ''),
+            'sync_id': sync_summary.get('sync_id', ''),
+            'sync_type': sync_info.get('sync_type', '')
+        }
+    
+    @staticmethod
+    def process_legacy_format(data):
+        """处理传统格式数据"""
+        try:
+            print(f"📜 处理传统格式数据:")
+            print(f"   📋 任务数量: {len(data.get('tasks', []))}")
+            
+            # 创建user_info结构
+            user_info = {
+                'user': data.get('user', {}),
+                'selectedRole': data.get('selectedRole', {}),
+                'session': data.get('session', {}),
+                'timestamp': data.get('timestamp', '')
+            }
+            
+            # 创建最终数据结构
+            result = {
+                'tasks': data.get('tasks', []),
+                'user_info': user_info,
+                'updated_at': data.get('timestamp', ''),
+                'data_source': 'legacy_format',
+                'original_format': 'legacy',
+                'validation_passed': True,
+                'processing_time': datetime.now().isoformat()
+            }
+            
+            print(f"✅ 传统格式数据处理完成")
+            return result
+            
+        except Exception as e:
+            print(f"❌ 处理传统格式数据失败: {str(e)}")
+            raise
+
+class APIClient:
+    """API客户端 - 用于从后端API获取任务数据"""
+    
+    def __init__(self, base_url="http://localhost:8000"):
+        self.base_url = base_url.rstrip('/')
+        self.session = None
+        self.access_token = None
+    
+    def authenticate(self, username, password, user_type=None, operator_type=None):
+        """用户认证"""
+        try:
+            import requests
+            
+            # 根据operator_type或user_type确定登录类型
+            # operator_type优先，因为它更准确地反映了用户的操作员类型
+            login_type = operator_type or user_type or 'password'
+            
+            # 准备登录数据
+            login_data = {
+                'login_type': login_type,
+                'username': username,
+                'password': password,
+                'grant_type': 'password'  # grant_type始终为password
+            }
+            
+            # 发送登录请求
+            response = requests.post(
+                f"{self.base_url}/api/auth/login",
+                data=login_data,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                self.access_token = token_data.get('access_token')
+                print(f"✅ API认证成功，用户: {username}")
+                return True
+            else:
+                print(f"❌ API认证失败: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ API认证异常: {str(e)}")
+            return False
+    
+    def get_my_tasks(self, status=None):
+        """获取当前用户的任务"""
+        try:
+            import requests
+            
+            if not self.access_token:
+                print("❌ 未认证，无法获取任务")
+                return []
+            
+            # 准备请求头
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # 准备查询参数
+            params = {}
+            if status:
+                params['status'] = status
+            
+            # 发送请求
+            response = requests.get(
+                f"{self.base_url}/api/my-tasks",
+                headers=headers,
+                params=params,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                tasks = response.json()
+                print(f"✅ 成功获取 {len(tasks)} 个任务")
+                return tasks
+            else:
+                print(f"❌ 获取任务失败: {response.status_code} - {response.text}")
+                return []
+                
+        except Exception as e:
+            print(f"❌ 获取任务异常: {str(e)}")
+            return []
+    
+    def get_user_task_stats(self, user_id):
+        """获取用户任务统计"""
+        try:
+            import requests
+            
+            if not self.access_token:
+                print("❌ 未认证，无法获取任务统计")
+                return {}
+            
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            response = requests.get(
+                f"{self.base_url}/api/users/{user_id}/task-stats",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                stats = response.json()
+                print(f"✅ 成功获取用户任务统计")
+                return stats
+            else:
+                print(f"❌ 获取任务统计失败: {response.status_code}")
+                return {}
+                
+        except Exception as e:
+            print(f"❌ 获取任务统计异常: {str(e)}")
+            return {}
+
+class DataReceiver:
+    """数据接收器 - 支持多种数据接收方式"""
+    
+    def __init__(self, desktop_manager=None):
+        self.desktop_manager = desktop_manager
+        self.http_server = None
+        self.websocket_server = None
+        self.file_watcher = None
+        
+    def start_file_watcher(self):
+        """启动文件监听器"""
+        try:
+            if self.file_watcher:
+                return
+                
+            self.file_watcher = QFileSystemWatcher()
+            
+            # 监听received_data.json文件
+            data_file_path = os.path.join(os.getcwd(), "received_data.json")
+            if os.path.exists(data_file_path):
+                self.file_watcher.addPath(data_file_path)
+                print(f"📂 开始监听文件: {data_file_path}")
+            
+            # 监听工作目录
+            self.file_watcher.addPath(os.getcwd())
+            
+            # 连接信号
+            self.file_watcher.fileChanged.connect(self.on_file_changed)
+            self.file_watcher.directoryChanged.connect(self.on_directory_changed)
+            
+            print("✅ 文件监听器启动成功")
+            
+        except Exception as e:
+            print(f"❌ 启动文件监听器失败: {str(e)}")
+    
+    def on_file_changed(self, file_path):
+        """文件变化处理"""
+        try:
+            print(f"📁 检测到文件变化: {file_path}")
+            
+            if file_path.endswith("received_data.json"):
+                print("🔄 received_data.json 文件已更新，重新加载数据...")
+                if self.desktop_manager:
+                    # 延迟一点时间确保文件写入完成
+                    QTimer.singleShot(1000, self.desktop_manager.load_role_data)
+                    QTimer.singleShot(1500, self.desktop_manager.check_and_notify_tasks)
+                    
+        except Exception as e:
+            print(f"❌ 处理文件变化失败: {str(e)}")
+    
+    def on_directory_changed(self, dir_path):
+        """目录变化处理"""
+        try:
+            # 检查是否有新的received_data.json文件
+            data_file_path = os.path.join(dir_path, "received_data.json")
+            if os.path.exists(data_file_path):
+                if data_file_path not in self.file_watcher.files():
+                    self.file_watcher.addPath(data_file_path)
+                    print(f"📂 开始监听新文件: {data_file_path}")
+                    
+                    # 立即处理新文件
+                    if self.desktop_manager:
+                        QTimer.singleShot(500, self.desktop_manager.load_role_data)
+                        QTimer.singleShot(1000, self.desktop_manager.check_and_notify_tasks)
+                        
+        except Exception as e:
+            print(f"❌ 处理目录变化失败: {str(e)}")
+    
+    def start_http_server(self, port=8080):
+        """启动HTTP服务器接收数据"""
+        try:
+            from flask import Flask, request, jsonify
+            from threading import Thread
+            
+            app = Flask(__name__)
+            
+            @app.route('/api/receive-data', methods=['POST'])
+            def receive_data():
+                try:
+                    data = request.get_json()
+                    if not data:
+                        return jsonify({'error': '无效的JSON数据'}), 400
+                    
+                    print(f"📡 通过HTTP接收到数据")
+                    
+                    # 保存到文件
+                    data_file_path = os.path.join(os.getcwd(), "received_data.json")
+                    with open(data_file_path, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, ensure_ascii=False, indent=2)
+                    
+                    print(f"✅ 数据已保存到: {data_file_path}")
+                    
+                    # 通知桌面管理器
+                    if self.desktop_manager:
+                        QTimer.singleShot(500, self.desktop_manager.load_role_data)
+                        QTimer.singleShot(1000, self.desktop_manager.check_and_notify_tasks)
+                    
+                    return jsonify({'message': '数据接收成功', 'timestamp': datetime.now().isoformat()})
+                    
+                except Exception as e:
+                    print(f"❌ HTTP数据接收失败: {str(e)}")
+                    return jsonify({'error': str(e)}), 500
+            
+            @app.route('/api/status', methods=['GET'])
+            def get_status():
+                return jsonify({
+                    'status': 'running',
+                    'timestamp': datetime.now().isoformat(),
+                    'version': '1.0.0'
+                })
+            
+            # 在后台线程中运行服务器
+            def run_server():
+                app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+            
+            server_thread = Thread(target=run_server, daemon=True)
+            server_thread.start()
+            
+            print(f"🌐 HTTP服务器已启动，监听端口: {port}")
+            print(f"📡 数据接收端点: http://localhost:{port}/api/receive-data")
+            
+        except Exception as e:
+            print(f"❌ 启动HTTP服务器失败: {str(e)}")
+    
+    def save_received_data(self, data, source="unknown"):
+        """保存接收到的数据"""
+        try:
+            # 添加接收时间戳和来源信息
+            data['_received_at'] = datetime.now().isoformat()
+            data['_received_from'] = source
+            
+            # 保存到received_data.json
+            data_file_path = os.path.join(os.getcwd(), "received_data.json")
+            with open(data_file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ 数据已保存 (来源: {source}): {data_file_path}")
+            
+            # 创建备份
+            backup_path = f"{data_file_path}.backup_{int(time.time())}"
+            with open(backup_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ 保存接收数据失败: {str(e)}")
+            return False
+    
+    def stop_all_receivers(self):
+        """停止所有接收器"""
+        try:
+            if self.file_watcher:
+                self.file_watcher.deleteLater()
+                self.file_watcher = None
+                print("📂 文件监听器已停止")
+            
+            # HTTP服务器会在程序退出时自动停止（daemon线程）
+            print("🌐 HTTP服务器已停止")
+            
+        except Exception as e:
+            print(f"❌ 停止接收器失败: {str(e)}")
+
+class TaskPreviewDialog(QDialog):
+    """任务预览对话框 - 显示选中任务的详细信息"""
+    
+    def __init__(self, tasks, parent=None):
+        super().__init__(parent)
+        self.tasks = tasks
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """设置预览界面"""
+        self.setWindowTitle(f"📋 任务预览 - 共 {len(self.tasks)} 个任务")
+        self.setFixedSize(900, 700)
+        self.setModal(True)
+        
+        # 设置对话框样式
+        self.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f8f9fa, stop:1 #e9ecef);
+                border-radius: 15px;
+            }
+        """)
+        
+        # 主布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(25, 25, 25, 20)
+        layout.setSpacing(15)
+        
+        # 标题区域
+        title_frame = QFrame()
+        title_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 10px;
+                border: 1px solid rgba(102, 126, 234, 0.2);
+                padding: 15px;
+            }
+        """)
+        title_layout = QHBoxLayout(title_frame)
+        
+        title_icon = QLabel("📋")
+        title_icon.setFont(QFont("Segoe UI Emoji", 24))
+        title_icon.setStyleSheet("background: transparent; color: #667eea;")
+        
+        title_text = QLabel(f"任务预览 - 共 {len(self.tasks)} 个任务")
+        title_text.setFont(QFont("微软雅黑", 16, QFont.Bold))
+        title_text.setStyleSheet("color: #2d3436; background: transparent;")
+        
+        title_layout.addWidget(title_icon)
+        title_layout.addWidget(title_text)
+        title_layout.addStretch()
+        
+        layout.addWidget(title_frame)
+        
+        # 任务统计信息
+        self.create_task_statistics(layout)
+        
+        # 任务详情列表
+        self.create_task_details_list(layout)
+        
+        # 底部按钮
+        self.create_preview_buttons(layout)
+        
+    def create_task_statistics(self, layout):
+        """创建任务统计信息"""
+        stats_frame = QFrame()
+        stats_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 10px;
+                border: 1px solid rgba(102, 126, 234, 0.2);
+                padding: 15px;
+            }
+        """)
+        stats_layout = QHBoxLayout(stats_frame)
+        
+        # 统计各种任务信息
+        task_types = {}
+        priority_counts = {"high": 0, "normal": 0, "low": 0}
+        progress_total = 0
+        
+        for task in self.tasks:
+            # 任务类型统计
+            task_type = task.get('type', task.get('task_type', '未知类型'))
+            task_types[task_type] = task_types.get(task_type, 0) + 1
+            
+            # 优先级统计
+            priority = task.get('priority', 'normal').lower()
+            if priority in ['high', '高', 'urgent', '紧急']:
+                priority_counts["high"] += 1
+            elif priority in ['low', '低']:
+                priority_counts["low"] += 1
+            else:
+                priority_counts["normal"] += 1
+            
+            # 进度统计
+            progress = task.get('progress', task.get('completion_percentage', 0))
+            progress_total += progress
+        
+        avg_progress = progress_total / len(self.tasks) if self.tasks else 0
+        
+        # 任务数量
+        count_label = QLabel(f"📊 任务总数：{len(self.tasks)}")
+        count_label.setFont(QFont("微软雅黑", 10, QFont.Bold))
+        count_label.setStyleSheet("""
+            QLabel {
+                color: #667eea;
+                background: rgba(102, 126, 234, 0.1);
+                padding: 8px 12px;
+                border-radius: 8px;
+            }
+        """)
+        
+        # 平均进度
+        progress_label = QLabel(f"📈 平均进度：{avg_progress:.1f}%")
+        progress_label.setFont(QFont("微软雅黑", 10, QFont.Bold))
+        progress_label.setStyleSheet("""
+            QLabel {
+                color: #00b894;
+                background: rgba(0, 184, 148, 0.1);
+                padding: 8px 12px;
+                border-radius: 8px;
+            }
+        """)
+        
+        # 优先级分布
+        priority_label = QLabel(f"⭐ 高优先级：{priority_counts['high']} 个")
+        priority_label.setFont(QFont("微软雅黑", 10, QFont.Bold))
+        priority_label.setStyleSheet("""
+            QLabel {
+                color: #e17055;
+                background: rgba(225, 112, 85, 0.1);
+                padding: 8px 12px;
+                border-radius: 8px;
+            }
+        """)
+        
+        stats_layout.addWidget(count_label)
+        stats_layout.addWidget(progress_label)
+        stats_layout.addWidget(priority_label)
+        stats_layout.addStretch()
+        
+        layout.addWidget(stats_frame)
+        
+    def create_task_details_list(self, layout):
+        """创建任务详情列表"""
+        # 滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                border-radius: 12px;
+                background-color: white;
+                padding: 5px;
+            }
+            QScrollBar:vertical {
+                background-color: #f8f9fa;
+                width: 8px;
+                border-radius: 4px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #667eea;
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #5a6fd8;
+            }
+        """)
+        
+        # 任务详情容器
+        details_widget = QWidget()
+        details_widget.setStyleSheet("background: transparent;")
+        details_layout = QVBoxLayout(details_widget)
+        details_layout.setContentsMargins(10, 10, 10, 10)
+        details_layout.setSpacing(10)
+        
+        # 为每个任务创建详情卡片
+        for i, task in enumerate(self.tasks, 1):
+            self.create_task_detail_card(details_layout, task, i)
+        
+        details_layout.addStretch()
+        scroll_area.setWidget(details_widget)
+        layout.addWidget(scroll_area)
+        
+    def create_task_detail_card(self, layout, task, index):
+        """创建单个任务的详情卡片"""
+        card_frame = QFrame()
+        card_frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #ffffff, stop:1 #fafbfc);
+                border: 2px solid rgba(102, 126, 234, 0.1);
+                border-radius: 12px;
+                margin: 5px;
+                padding: 15px;
+            }
+            QFrame:hover {
+                border-color: #667eea;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f8f9ff, stop:1 #f0f2ff);
+            }
+        """)
+        
+        card_layout = QVBoxLayout(card_frame)
+        card_layout.setSpacing(10)
+        
+        # 任务标题行
+        title_layout = QHBoxLayout()
+        
+        # 序号和任务名称
+        task_name = task.get('name', task.get('task_name', '未命名任务'))
+        title_label = QLabel(f"{index}. {task_name}")
+        title_label.setFont(QFont("微软雅黑", 14, QFont.Bold))
+        title_label.setStyleSheet("color: #2d3436; background: transparent;")
+        
+        # 任务状态
+        status = task.get('status', task.get('assignment_status', '未知状态'))
+        status_label = QLabel(f"📌 {status}")
+        status_label.setFont(QFont("微软雅黑", 10, QFont.Bold))
+        status_color = "#00b894" if status == "进行中" else "#fdcb6e" if status == "待开始" else "#74b9ff"
+        status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {status_color};
+                background: rgba({int(status_color[1:3], 16)}, {int(status_color[3:5], 16)}, {int(status_color[5:7], 16)}, 0.1);
+                padding: 4px 8px;
+                border-radius: 6px;
+            }}
+        """)
+        
+        title_layout.addWidget(title_label)
+        title_layout.addStretch()
+        title_layout.addWidget(status_label)
+        
+        card_layout.addLayout(title_layout)
+        
+        # 任务详细信息
+        info_layout = QGridLayout()
+        info_layout.setSpacing(8)
+        
+        # 任务信息字段
+        info_fields = [
+            ("🔧 任务类型", task.get('type', task.get('task_type', '未知类型'))),
+            ("📍 任务阶段", task.get('phase', task.get('task_phase', '未知阶段'))),
+            ("⭐ 优先级", task.get('priority', 'normal')),
+            ("📊 完成进度", f"{task.get('progress', task.get('completion_percentage', 0))}%"),
+            ("🆔 分配ID", str(task.get('assignment_id', '无'))),
+            ("⏰ 分配时间", task.get('assigned_at', '未知')),
+            ("🎯 角色绑定", task.get('role_binding', '无')),
+            ("⏱️ 预计时长", task.get('estimated_duration', '未知'))
+        ]
+        
+        row = 0
+        for label_text, value in info_fields:
+            if value and value != '无' and value != '未知':
+                label = QLabel(label_text)
+                label.setFont(QFont("微软雅黑", 9))
+                label.setStyleSheet("color: #6c757d; background: transparent;")
+                
+                value_label = QLabel(str(value))
+                value_label.setFont(QFont("微软雅黑", 9, QFont.Bold))
+                value_label.setStyleSheet("color: #495057; background: transparent;")
+                
+                info_layout.addWidget(label, row, 0)
+                info_layout.addWidget(value_label, row, 1)
+                row += 1
+        
+        card_layout.addLayout(info_layout)
+        
+        # 任务描述（如果有）
+        description = task.get('description', task.get('task_description', ''))
+        if description:
+            desc_label = QLabel("📝 任务描述:")
+            desc_label.setFont(QFont("微软雅黑", 9))
+            desc_label.setStyleSheet("color: #6c757d; background: transparent; margin-top: 5px;")
+            
+            desc_content = QLabel(description)
+            desc_content.setFont(QFont("微软雅黑", 9))
+            desc_content.setStyleSheet("""
+                QLabel {
+                    color: #495057;
+                    background: rgba(102, 126, 234, 0.05);
+                    padding: 8px;
+                    border-radius: 6px;
+                    border-left: 3px solid #667eea;
+                }
+            """)
+            desc_content.setWordWrap(True)
+            
+            card_layout.addWidget(desc_label)
+            card_layout.addWidget(desc_content)
+        
+        layout.addWidget(card_frame)
+        
+    def create_preview_buttons(self, layout):
+        """创建预览对话框底部按钮"""
+        buttons_frame = QFrame()
+        buttons_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 12px;
+                border: 1px solid rgba(102, 126, 234, 0.1);
+                padding: 15px;
+            }
+        """)
+        buttons_layout = QHBoxLayout(buttons_frame)
+        buttons_layout.setContentsMargins(20, 15, 20, 15)
+        buttons_layout.setSpacing(15)
+        
+        # 导出按钮
+        export_btn = QPushButton("📤 导出详情")
+        export_btn.setFixedSize(120, 40)
+        export_btn.setToolTip("导出任务详情到文件")
+        export_btn.clicked.connect(self.export_task_details)
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #74b9ff, stop:1 #0984e3);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0984e3, stop:1 #0770c4);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(116, 185, 255, 0.4);
+            }
+        """)
+        buttons_layout.addWidget(export_btn)
+        
+        buttons_layout.addStretch()
+        
+        # 关闭按钮
+        close_btn = QPushButton("✅ 确定")
+        close_btn.setFixedSize(100, 40)
+        close_btn.setToolTip("关闭预览对话框")
+        close_btn.clicked.connect(self.accept)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #00b894, stop:1 #00a085);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #00a085, stop:1 #008f72);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 15px rgba(0, 184, 148, 0.4);
+            }
+        """)
+        buttons_layout.addWidget(close_btn)
+        
+        layout.addWidget(buttons_frame)
+        
+    def export_task_details(self):
+        """导出任务详情到文件"""
+        try:
+            import json
+            from datetime import datetime
+            
+            # 准备导出数据
+            export_data = {
+                "export_time": datetime.now().isoformat(),
+                "task_count": len(self.tasks),
+                "tasks": []
+            }
+            
+            for task in self.tasks:
+                task_data = {
+                    "task_name": task.get('name', task.get('task_name', '未命名任务')),
+                    "task_type": task.get('type', task.get('task_type', '未知类型')),
+                    "task_phase": task.get('phase', task.get('task_phase', '未知阶段')),
+                    "status": task.get('status', task.get('assignment_status', '未知状态')),
+                    "priority": task.get('priority', 'normal'),
+                    "progress": task.get('progress', task.get('completion_percentage', 0)),
+                    "assignment_id": task.get('assignment_id'),
+                    "assigned_at": task.get('assigned_at'),
+                    "role_binding": task.get('role_binding'),
+                    "estimated_duration": task.get('estimated_duration'),
+                    "description": task.get('description', task.get('task_description', ''))
+                }
+                export_data["tasks"].append(task_data)
+            
+            # 保存到文件
+            filename = f"task_preview_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, ensure_ascii=False, indent=2)
+            
+            QMessageBox.information(self, "导出成功", f"任务详情已导出到文件：\n{filename}")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "导出失败", f"导出任务详情时出错：\n{str(e)}")
+
 
 class TaskSelectionDialog(QDialog):
     """任务选择对话框"""
@@ -82,8 +1235,9 @@ class TaskSelectionDialog(QDialog):
         stats_layout = QHBoxLayout(stats_frame)
         stats_layout.setContentsMargins(20, 15, 20, 15)
         
-        # 任务统计标签
-        pending_tasks = [task for task in self.tasks if task.get('status') == api_config.TASK_STATUS.get("PENDING")]
+        # 任务统计标签 - 使用统一的筛选条件
+        pending_status_list = [api_config.TASK_STATUS.get("PENDING", "待分配"), "未分配", "进行中"]
+        pending_tasks = [task for task in self.tasks if task.get('status') in pending_status_list]
         total_label = QLabel(f"📊 总任务数：{len(self.tasks)}")
         pending_label = QLabel(f"⏳ 待提交：{len(pending_tasks)}")
         
@@ -142,10 +1296,10 @@ class TaskSelectionDialog(QDialog):
         tasks_layout.setContentsMargins(10, 10, 10, 10)
         tasks_layout.setSpacing(8)
         
-        # 添加任务复选框
+        # 添加任务复选框 - 使用统一的筛选条件
         pending_count = 0
         for task in self.tasks:
-            if task.get('status') == api_config.TASK_STATUS.get("PENDING"):
+            if task.get('status') in pending_status_list:
                 self.create_task_item(tasks_layout, task)
                 pending_count += 1
         
@@ -190,7 +1344,7 @@ class TaskSelectionDialog(QDialog):
         layout.addWidget(scroll_area)
         
     def create_bottom_buttons_section(self, layout):
-        """创建底部按钮区域"""
+        """创建底部按钮区域 - 完善版本"""
         # 单行按钮区域
         buttons_frame = QFrame()
         buttons_frame.setStyleSheet("""
@@ -205,9 +1359,16 @@ class TaskSelectionDialog(QDialog):
         buttons_layout.setContentsMargins(20, 15, 20, 15)
         buttons_layout.setSpacing(15)
         
+        # 智能选择选项组
+        smart_select_group = QWidget()
+        smart_layout = QHBoxLayout(smart_select_group)
+        smart_layout.setContentsMargins(0, 0, 0, 0)
+        smart_layout.setSpacing(10)
+        
         # 全选按钮
         select_all_btn = QPushButton("✅ 全选")
         select_all_btn.setFixedSize(100, 40)
+        select_all_btn.setToolTip("选择所有待提交的任务")
         select_all_btn.clicked.connect(self.select_all_tasks)
         select_all_btn.setStyleSheet("""
             QPushButton {
@@ -231,11 +1392,12 @@ class TaskSelectionDialog(QDialog):
                 box-shadow: 0 2px 6px rgba(116, 185, 255, 0.3);
             }
         """)
-        buttons_layout.addWidget(select_all_btn)
+        smart_layout.addWidget(select_all_btn)
         
         # 取消全选按钮
         clear_all_btn = QPushButton("❌ 取消全选")
         clear_all_btn.setFixedSize(110, 40)
+        clear_all_btn.setToolTip("取消选择所有任务")
         clear_all_btn.clicked.connect(self.clear_all_tasks)
         clear_all_btn.setStyleSheet("""
             QPushButton {
@@ -259,7 +1421,66 @@ class TaskSelectionDialog(QDialog):
                 box-shadow: 0 2px 6px rgba(253, 121, 168, 0.3);
             }
         """)
-        buttons_layout.addWidget(clear_all_btn)
+        smart_layout.addWidget(clear_all_btn)
+        
+        # 智能选择按钮组
+        smart_high_priority_btn = QPushButton("⭐ 高优先级")
+        smart_high_priority_btn.setFixedSize(100, 40)
+        smart_high_priority_btn.setToolTip("仅选择高优先级任务")
+        smart_high_priority_btn.clicked.connect(self.select_high_priority_tasks)
+        smart_high_priority_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #fdcb6e, stop:1 #e17055);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 11px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #e17055, stop:1 #d63031);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(253, 203, 110, 0.4);
+            }
+        """)
+        smart_layout.addWidget(smart_high_priority_btn)
+        
+        # 按类型选择按钮
+        smart_by_type_btn = QPushButton("🔧 按类型")
+        smart_by_type_btn.setFixedSize(100, 40)
+        smart_by_type_btn.setToolTip("按任务类型智能选择")
+        smart_by_type_btn.clicked.connect(self.show_type_selection_menu)
+        smart_by_type_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #a29bfe, stop:1 #6c5ce7);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 11px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #6c5ce7, stop:1 #5f3dc4);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(162, 155, 254, 0.4);
+            }
+        """)
+        smart_layout.addWidget(smart_by_type_btn)
+        
+        buttons_layout.addWidget(smart_select_group)
+        
+        # 分隔线
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("QFrame { color: rgba(102, 126, 234, 0.3); }")
+        buttons_layout.addWidget(separator)
         
         # 选中数量指示器
         self.selected_count_label = QLabel("📋 未选中任务")
@@ -270,6 +1491,7 @@ class TaskSelectionDialog(QDialog):
                 background: rgba(102, 126, 234, 0.1);
                 padding: 8px 12px;
                 border-radius: 8px;
+                min-width: 120px;
             }
         """)
         buttons_layout.addWidget(self.selected_count_label)
@@ -277,9 +1499,41 @@ class TaskSelectionDialog(QDialog):
         # 弹性空间
         buttons_layout.addStretch()
         
+        # 操作按钮组
+        action_group = QWidget()
+        action_layout = QHBoxLayout(action_group)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(10)
+        
+        # 预览按钮
+        preview_btn = QPushButton("👁️ 预览")
+        preview_btn.setFixedSize(100, 40)
+        preview_btn.setToolTip("预览选中任务的详细信息")
+        preview_btn.clicked.connect(self.preview_selected_tasks)
+        preview_btn.setStyleSheet("""
+            QPushButton {
+                background: #ffffff;
+                color: #667eea;
+                border: 2px solid #667eea;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: #f8f9ff;
+                border-color: #5a6fd8;
+                color: #5a6fd8;
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+            }
+        """)
+        action_layout.addWidget(preview_btn)
+        
         # 取消按钮
         cancel_btn = QPushButton("🚫 取消")
         cancel_btn.setFixedSize(100, 40)
+        cancel_btn.setToolTip("取消任务选择，返回上一级")
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setStyleSheet("""
             QPushButton {
@@ -304,11 +1558,12 @@ class TaskSelectionDialog(QDialog):
                 box-shadow: 0 2px 4px rgba(108, 117, 125, 0.1);
             }
         """)
-        buttons_layout.addWidget(cancel_btn)
+        action_layout.addWidget(cancel_btn)
         
         # 提交按钮
         submit_btn = QPushButton("🚀 提交选中任务")
         submit_btn.setFixedSize(140, 40)
+        submit_btn.setToolTip("提交所选任务到服务器")
         submit_btn.clicked.connect(self.accept_selection)
         submit_btn.setStyleSheet("""
             QPushButton {
@@ -334,13 +1589,128 @@ class TaskSelectionDialog(QDialog):
                 box-shadow: 0 2px 8px rgba(0, 184, 148, 0.3);
             }
         """)
-        buttons_layout.addWidget(submit_btn)
+        action_layout.addWidget(submit_btn)
+        
+        buttons_layout.addWidget(action_group)
         
         layout.addWidget(buttons_frame)
         
         # 连接复选框变化事件来更新选中数量
         self.update_selected_count()
         
+    def select_high_priority_tasks(self):
+        """选择高优先级任务"""
+        for task_id, checkbox in self.task_checkboxes.items():
+            # 找到对应的任务
+            task = None
+            for t in self.tasks:
+                if (t.get('id') == task_id or 
+                    t.get('task_id') == task_id or 
+                    t.get('assignment_id') == task_id):
+                    task = t
+                    break
+            
+            if task:
+                priority = task.get('priority', 'normal').lower()
+                if priority in ['high', '高', 'urgent', '紧急']:
+                    checkbox.setChecked(True)
+                else:
+                    checkbox.setChecked(False)
+        
+        self.update_selected_count()
+        
+    def show_type_selection_menu(self):
+        """显示任务类型选择菜单"""
+        from PyQt5.QtWidgets import QMenu, QAction
+        
+        # 获取所有任务类型
+        task_types = set()
+        for task in self.tasks:
+            task_type = task.get('type', task.get('task_type', ''))
+            if task_type:
+                task_types.add(task_type)
+        
+        if not task_types:
+            QMessageBox.information(self, "提示", "没有找到任务类型信息")
+            return
+        
+        # 创建菜单
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: white;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 5px;
+            }
+            QMenu::item {
+                background-color: transparent;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-family: '微软雅黑';
+            }
+            QMenu::item:selected {
+                background-color: #667eea;
+                color: white;
+            }
+        """)
+        
+        for task_type in sorted(task_types):
+            action = QAction(f"🔧 {task_type}", self)
+            action.triggered.connect(lambda checked, t=task_type: self.select_tasks_by_type(t))
+            menu.addAction(action)
+        
+        # 显示菜单
+        button = self.sender()
+        menu.exec_(button.mapToGlobal(button.rect().bottomLeft()))
+        
+    def select_tasks_by_type(self, task_type):
+        """按任务类型选择任务"""
+        selected_count = 0
+        for task_id, checkbox in self.task_checkboxes.items():
+            # 找到对应的任务
+            task = None
+            for t in self.tasks:
+                if (t.get('id') == task_id or 
+                    t.get('task_id') == task_id or 
+                    t.get('assignment_id') == task_id):
+                    task = t
+                    break
+            
+            if task:
+                current_type = task.get('type', task.get('task_type', ''))
+                if current_type == task_type:
+                    checkbox.setChecked(True)
+                    selected_count += 1
+                else:
+                    checkbox.setChecked(False)
+        
+        self.update_selected_count()
+        
+        # 显示选择结果
+        QMessageBox.information(self, "选择完成", 
+                               f"已选择 {selected_count} 个\"{task_type}\"类型的任务")
+        
+    def preview_selected_tasks(self):
+        """预览选中的任务"""
+        selected_tasks = []
+        for task_id, checkbox in self.task_checkboxes.items():
+            if checkbox.isChecked():
+                # 找到对应的任务
+                for task in self.tasks:
+                    if (task.get('id') == task_id or 
+                        task.get('task_id') == task_id or 
+                        task.get('assignment_id') == task_id):
+                        selected_tasks.append(task)
+                        break
+        
+        if not selected_tasks:
+            QMessageBox.information(self, "提示", "请先选择要预览的任务")
+            return
+        
+        # 创建预览对话框
+        preview_dialog = TaskPreviewDialog(selected_tasks, self)
+        preview_dialog.exec_()
     def create_task_item(self, layout, task):
         """创建任务项"""
         # 创建任务框架
@@ -406,8 +1776,9 @@ class TaskSelectionDialog(QDialog):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(6)
         
-        # 任务名称
-        name_label = QLabel(task.get('task_name', '未命名任务'))
+        # 任务名称 - 支持两种字段名格式
+        task_name = task.get('name', task.get('task_name', '未命名任务'))
+        name_label = QLabel(task_name)
         name_label.setFont(QFont("微软雅黑", 12, QFont.Bold))
         name_label.setStyleSheet("""
             QLabel {
@@ -421,9 +1792,10 @@ class TaskSelectionDialog(QDialog):
         details_layout = QHBoxLayout()
         details_layout.setSpacing(12)
         
-        # 任务类型
-        if task.get('task_type'):
-            type_label = QLabel(f"🏷️ {task['task_type']}")
+        # 任务类型 - 支持两种字段名格式
+        task_type = task.get('type', task.get('task_type', ''))
+        if task_type:
+            type_label = QLabel(f"🏷️ {task_type}")
             type_label.setFont(QFont("微软雅黑", 9))
             type_label.setStyleSheet("""
                 QLabel {
@@ -435,9 +1807,10 @@ class TaskSelectionDialog(QDialog):
             """)
             details_layout.addWidget(type_label)
         
-        # 任务阶段
-        if task.get('task_phase'):
-            phase_label = QLabel(f"📍 {task['task_phase']}")
+        # 任务阶段 - 支持两种字段名格式
+        task_phase = task.get('phase', task.get('task_phase', ''))
+        if task_phase:
+            phase_label = QLabel(f"📍 {task_phase}")
             phase_label.setFont(QFont("微软雅黑", 9))
             phase_label.setStyleSheet("""
                 QLabel {
@@ -476,8 +1849,9 @@ class TaskSelectionDialog(QDialog):
         priority_indicator.setStyleSheet("background: transparent; color: #fdcb6e;")
         task_layout.addWidget(priority_indicator)
         
-        # 保存复选框引用
-        self.task_checkboxes[task['id']] = checkbox
+        # 保存复选框引用 - 支持多种ID字段格式
+        task_id = task.get('id') or task.get('task_id') or task.get('assignment_id', f"task_{len(self.task_checkboxes)}")
+        self.task_checkboxes[task_id] = checkbox
         
         # 连接复选框变化事件
         checkbox.stateChanged.connect(self.update_selected_count)
@@ -1648,42 +3022,244 @@ class DesktopManager(QWidget):
         self.device_worker = None  # 设备添加工作线程
         self.batch_device_worker = None  # 批量设备添加工作线程
         self.device_dialog = None  # 设备添加对话框实例
-        self.setup_file_watcher()  # 设置文件监视器
+        
+        # 初始化增强的数据接收器
+        self.data_receiver = DataReceiver(self)
+        
+        # 配置选项 - 是否自动打开任务提交弹窗
+        self.auto_open_task_dialog = True  # 设置为True表示启动后自动打开任务提交弹窗
+        
+        # 初始化UI和设置
+        self.setup_data_receivers()  # 设置增强的数据接收器
         self.load_role_data()  # 加载角色数据
         self.setup_ui()
         self.setup_timer()
         self.setup_animations()
         self.position_at_top()
         
-    def setup_file_watcher(self):
-        """设置文件监视器来监听JSON文件变化"""
-        self.file_watcher = QFileSystemWatcher()
-        json_file_path = os.path.join(os.getcwd(), "received_data.json")
-        if os.path.exists(json_file_path):
-            self.file_watcher.addPath(json_file_path)
-            self.file_watcher.fileChanged.connect(self.on_json_file_changed)
+        # 延迟检查是否有待处理的任务，避免在初始化时阻塞界面
+        print("🚀 Desktop Manager 已启动，将在1秒后检查任务通知...")
+        print(f"📋 自动打开任务对话框: {'启用' if self.auto_open_task_dialog else '禁用'}")
+        QTimer.singleShot(1000, self.check_and_notify_tasks)
+        
+    def setup_data_receivers(self):
+        """设置增强的数据接收器"""
+        try:
+            print("🔧 正在设置数据接收器...")
+            
+            # 启动文件监听器
+            self.data_receiver.start_file_watcher()
+            
+            # 启动HTTP服务器（可选）
+            try:
+                self.data_receiver.start_http_server(port=8080)
+            except Exception as e:
+                print(f"⚠️ HTTP服务器启动失败（可能端口被占用）: {str(e)}")
+                print("📂 将仅使用文件监听器接收数据")
+            
+            print("✅ 数据接收器设置完成")
+            
+        except Exception as e:
+            print(f"❌ 设置数据接收器失败: {str(e)}")
+            # 回退到简单的文件监听器
+            self.setup_simple_file_watcher()
+    
+    def setup_simple_file_watcher(self):
+        """设置简单的文件监听器（回退方案）"""
+        try:
+            self.file_watcher = QFileSystemWatcher()
+            json_file_path = os.path.join(os.getcwd(), "received_data.json")
+            if os.path.exists(json_file_path):
+                self.file_watcher.addPath(json_file_path)
+                self.file_watcher.fileChanged.connect(self.on_json_file_changed)
+                print("📂 简单文件监听器已启动")
+        except Exception as e:
+            print(f"❌ 简单文件监听器启动失败: {str(e)}")
             
     def on_json_file_changed(self):
-        """当JSON文件发生变化时的处理函数"""
+        """当JSON文件发生变化时的处理函数（兼容旧版本）"""
+        print("📁 检测到received_data.json文件变化")
         self.load_role_data()
         self.update_role_display()
         
     def load_role_data(self):
-        """从JSON文件加载角色数据"""
+        """从JSON文件加载角色数据 - 使用增强的数据处理器"""
         try:
             json_file_path = os.path.join(os.getcwd(), "received_data.json")
             if os.path.exists(json_file_path):
+                print(f"📂 正在加载角色数据: {json_file_path}")
+                
                 with open(json_file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                
+                # 使用数据处理器检测格式
+                data_format = DataProcessor.detect_data_format(data)
+                print(f"🔍 检测到数据格式: {data_format}")
+                
+                if data_format == 'task_assignment':
+                    # 处理任务分配格式
+                    try:
+                        processed_data = DataProcessor.process_task_assignment_format(data)
+                        user_info = processed_data['user_info']
+                        
+                        # 构建兼容的角色数据结构
+                        role_data = {
+                            'action': 'task_deployment',
+                            'selectedRole': user_info['selectedRole'],
+                            'user': user_info['user'],
+                            'session': user_info.get('session', {}),
+                            'deployment_time': user_info.get('timestamp'),
+                            'assigned_tasks_count': len(processed_data.get('tasks', [])),
+                            'data_source': processed_data.get('data_source'),
+                            'deployment_id': user_info.get('deployment_id', ''),
+                            'target_ip': user_info.get('target_ip', ''),
+                            'validation_passed': processed_data.get('validation_passed', False),
+                            'processing_time': processed_data.get('processing_time')
+                        }
+                        
+                        self.current_role_data = role_data
+                        
+                        print(f"✅ 任务分配数据加载成功:")
+                        print(f"   🎯 目标角色: {role_data['selectedRole']['label']}")
+                        print(f"   👤 操作员: {role_data['user']['username']} (ID: {role_data['user']['id']})")
+                        print(f"   📋 分配任务数: {role_data['assigned_tasks_count']}")
+                        print(f"   📊 数据源: {role_data['data_source']}")
+                        print(f"   🆔 部署ID: {role_data['deployment_id']}")
+                        print(f"   ✅ 数据验证: {'通过' if role_data['validation_passed'] else '失败'}")
+                        
+                    except Exception as e:
+                        print(f"❌ 处理任务分配数据失败: {str(e)}")
+                        # 回退到简单处理
+                        self.current_role_data = self._fallback_role_processing(data)
+                        
+                elif data_format == 'user_data_sync':
+                    # 处理用户数据同步格式
+                    try:
+                        processed_data = DataProcessor.process_user_data_sync(data)
+                        user_info = processed_data['user_info']
+                        
+                        # 构建兼容的角色数据结构
+                        role_data = {
+                            'action': 'user_data_sync',
+                            'selectedRole': user_info['selectedRole'],
+                            'user': user_info['user'],
+                            'session': user_info.get('session', {}),
+                            'sync_time': user_info.get('timestamp'),
+                            'sync_type': user_info.get('sync_type'),
+                            'sync_id': user_info.get('sync_id'),
+                            'data_source': processed_data.get('data_source'),
+                            'validation_passed': processed_data.get('validation_passed', False),
+                            'processing_time': processed_data.get('processing_time'),
+                            'needs_api_fetch': processed_data.get('needs_api_fetch', False)
+                        }
+                        
+                        self.current_role_data = role_data
+                        
+                        print(f"✅ 用户数据同步加载成功:")
+                        print(f"   👤 用户: {role_data['user']['username']} (ID: {role_data['user']['id']})")
+                        print(f"   🎯 角色: {role_data['selectedRole']['label']}")
+                        print(f"   🔄 同步类型: {role_data['sync_type']}")
+                        print(f"   📊 数据源: {role_data['data_source']}")
+                        print(f"   🆔 同步ID: {role_data['sync_id']}")
+                        print(f"   ✅ 数据验证: {'通过' if role_data['validation_passed'] else '失败'}")
+                        print(f"   🌐 需要API获取: {'是' if role_data['needs_api_fetch'] else '否'}")
+                        
+                    except Exception as e:
+                        print(f"❌ 处理用户数据同步失败: {str(e)}")
+                        # 回退到简单处理
+                        self.current_role_data = self._fallback_user_sync_processing(data)
+                        
+                elif data_format == 'legacy':
+                    # 处理传统格式
+                    try:
+                        processed_data = DataProcessor.process_legacy_format(data)
+                        self.current_role_data = data
+                        print(f"📜 传统格式数据加载成功: {data.get('selectedRole', {}).get('label', '未知角色')}")
+                        
+                    except Exception as e:
+                        print(f"❌ 处理传统格式数据失败: {str(e)}")
+                        self.current_role_data = data
+                        
+                else:
+                    print(f"❌ 未知的数据格式，尝试兼容处理")
                     self.current_role_data = data
-                    print(f"已加载角色数据: {data.get('selectedRole', {}).get('label', '未知角色')}")
+                    
             else:
-                print("未找到received_data.json文件")
+                print("❌ 未找到received_data.json文件")
                 self.current_role_data = None
-        except Exception as e:
-            print(f"加载角色数据失败: {str(e)}")
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON格式错误: {str(e)}")
             self.current_role_data = None
+        except Exception as e:
+            print(f"❌ 加载角色数据失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self.current_role_data = None
+    
+    def _fallback_role_processing(self, data):
+        """回退的角色数据处理"""
+        try:
+            deployment_info = data.get('deployment_info', {})
+            operator = deployment_info.get('operator', {})
             
+            return {
+                'action': 'task_deployment',
+                'selectedRole': {
+                    'label': deployment_info.get('target_role', '未知角色'),
+                    'value': deployment_info.get('target_role', '未知角色'),
+                    'description': f"当前任务角色：{deployment_info.get('target_role', '未知')}"
+                },
+                'user': {
+                    'id': operator.get('user_id'),
+                    'username': operator.get('username', '未知用户'),
+                    'role': operator.get('operator_role', '未知角色'),
+                    'type': operator.get('operator_type', '操作员')
+                },
+                'session': deployment_info.get('session', {}),
+                'deployment_time': deployment_info.get('deployment_time'),
+                'assigned_tasks_count': len(data.get('assigned_tasks', [])),
+                'data_source': data.get('deployment_summary', {}).get('data_source', 'fallback'),
+                'validation_passed': False
+            }
+        except Exception as e:
+            print(f"❌ 回退处理也失败: {str(e)}")
+            return None
+    
+    def _fallback_user_sync_processing(self, data):
+        """回退的用户数据同步处理"""
+        try:
+            sync_info = data.get('sync_info', {})
+            operator = sync_info.get('operator', {})
+            users = data.get('users', [])
+            current_user = users[0] if users else {}
+            
+            return {
+                'action': 'user_data_sync',
+                'selectedRole': {
+                    'label': current_user.get('role', '未知角色'),
+                    'value': current_user.get('role', '未知角色'),
+                    'description': f"当前用户角色：{current_user.get('role', '未知')}"
+                },
+                'user': {
+                    'id': current_user.get('id'),
+                    'username': current_user.get('username', '未知用户'),
+                    'role': current_user.get('role', '未知角色'),
+                    'type': current_user.get('type', '操作员'),
+                    'status': current_user.get('status', 'active')
+                },
+                'session': sync_info.get('session', {}),
+                'sync_time': sync_info.get('sync_time'),
+                'sync_type': sync_info.get('sync_type', 'unknown'),
+                'sync_id': data.get('sync_summary', {}).get('sync_id', ''),
+                'data_source': 'user_data_sync_fallback',
+                'validation_passed': False,
+                'needs_api_fetch': True
+            }
+        except Exception as e:
+            print(f"❌ 用户数据同步回退处理也失败: {str(e)}")
+            return None
+        
     def get_role_image_path(self, role_name):
         """根据角色名称获取对应的图片路径"""
         # 角色名称到图片文件名的映射
@@ -1976,7 +3552,7 @@ class DesktopManager(QWidget):
             ("🐱", "宠物", self.show_pet, "#e74c3c"),
             ("💬", "聊天", self.show_chat, "#2ecc71"),
             ("⚙️", "设置", self.show_settings_action, "#f39c12"),
-            ("📤", "任务列表", self.submit_tasks, "#9b59b6"),
+            ("📤", "智能任务列表", self.submit_tasks, "#9b59b6"),
             ("🖥️", "添加设备", self.add_device, "#34495e"),
             ("❌", "退出", self.exit_application, "#95a5a6")
         ]
@@ -2274,8 +3850,19 @@ class DesktopManager(QWidget):
             return
             
         # 显示加载状态
-        self.status_label.setText("正在获取任务列表...")
+        self.status_label.setText("正在智能获取任务列表...")
         
+        # 首先检查是否有从前端接收到的任务数据
+        received_tasks = self.load_received_tasks()
+        if received_tasks:
+            print(f"✓ 使用从前端接收到的智能任务数据，共 {len(received_tasks)} 个任务")
+            self.status_label.setText(f"已加载 {len(received_tasks)} 个智能推荐任务")
+            # 延迟一下让用户看到状态信息
+            QTimer.singleShot(500, lambda: self.on_tasks_loaded(received_tasks))
+            return
+        
+        print("⚠ 未找到前端智能推荐任务，回退到API获取任务列表...")
+        self.status_label.setText("正在从服务器获取任务列表...")
         # 创建任务列表获取工作线程
         self.task_list_worker = TaskListWorker()
         
@@ -2285,6 +3872,275 @@ class DesktopManager(QWidget):
         
         # 开始获取任务列表
         self.task_list_worker.start()
+    
+    def load_received_tasks(self):
+        """加载从前端接收到的任务数据 - 使用增强的数据处理器"""
+        try:
+            task_file_path = os.path.join(os.getcwd(), 'received_tasks.json')
+            data_file_path = os.path.join(os.getcwd(), 'received_data.json')
+            
+            print(f"📂 开始加载任务数据...")
+            
+            # 检查received_tasks.json文件是否存在
+            if not os.path.exists(task_file_path):
+                print("received_tasks.json 文件不存在，尝试从received_data.json处理...")
+                
+                if not os.path.exists(data_file_path):
+                    print("❌ received_data.json 文件也不存在")
+                    return None
+                
+                # 从received_data.json处理数据
+                with open(data_file_path, 'r', encoding='utf-8') as f:
+                    raw_data = json.load(f)
+                
+                # 使用数据处理器处理数据
+                data_format = DataProcessor.detect_data_format(raw_data)
+                print(f"🔍 检测到数据格式: {data_format}")
+                
+                if data_format == 'task_assignment':
+                    try:
+                        processed_data = DataProcessor.process_task_assignment_format(raw_data)
+                        print(f"✅ 任务分配数据处理成功")
+                    except Exception as e:
+                        print(f"❌ 任务分配数据处理失败: {str(e)}")
+                        return None
+                        
+                elif data_format == 'user_data_sync':
+                    try:
+                        processed_data = DataProcessor.process_user_data_sync(raw_data)
+                        print(f"✅ 用户数据同步处理成功")
+                        
+                        # 如果需要通过API获取任务
+                        if processed_data.get('needs_api_fetch'):
+                            print(f"🌐 需要通过API获取任务数据...")
+                            api_user_info = processed_data.get('api_user_info', {})
+                            
+                            # 使用API客户端获取任务
+                            api_client = APIClient()
+                            user_type = api_user_info.get('type', '操作员')  # 默认为操作员
+                            operator_type = api_user_info.get('operator_type')  # 获取操作员类型
+                            if api_client.authenticate(api_user_info.get('username'), api_user_info.get('password'), user_type, operator_type):
+                                tasks = api_client.get_my_tasks()
+                                if tasks:
+                                    # 转换API任务格式为内部格式
+                                    converted_tasks = []
+                                    for task in tasks:
+                                        converted_task = self._convert_api_task_to_internal_format(task)
+                                        converted_tasks.append(converted_task)
+                                    
+                                    processed_data['tasks'] = converted_tasks
+                                    processed_data['needs_api_fetch'] = False
+                                    print(f"✅ 通过API成功获取 {len(converted_tasks)} 个任务")
+                                else:
+                                    print(f"⚠️ API返回空任务列表")
+                            else:
+                                print(f"❌ API认证失败，无法获取任务")
+                                return None
+                        
+                    except Exception as e:
+                        print(f"❌ 用户数据同步处理失败: {str(e)}")
+                        return None
+                        
+                elif data_format == 'legacy':
+                    try:
+                        processed_data = DataProcessor.process_legacy_format(raw_data)
+                        print(f"✅ 传统格式数据处理成功")
+                    except Exception as e:
+                        print(f"❌ 传统格式数据处理失败: {str(e)}")
+                        return None
+                        
+                else:
+                    print(f"❌ 未知的数据格式，无法处理")
+                    return None
+                
+                # 保存处理后的数据
+                try:
+                    with open(task_file_path, 'w', encoding='utf-8') as f:
+                        json.dump(processed_data, f, ensure_ascii=False, indent=2)
+                    print(f"✅ 已将处理后的数据保存到 {task_file_path}")
+                except Exception as e:
+                    print(f"❌ 保存处理后的数据失败: {str(e)}")
+                    # 即使保存失败，也继续使用内存中的数据
+                
+            else:
+                # 直接读取已存在的received_tasks.json
+                print(f"📖 读取已存在的任务文件: {task_file_path}")
+                with open(task_file_path, 'r', encoding='utf-8') as f:
+                    processed_data = json.load(f)
+            
+            # 提取任务数据
+            tasks = processed_data.get('tasks', [])
+            user_info = processed_data.get('user_info', {})
+            data_source = processed_data.get('data_source', 'unknown')
+            original_format = processed_data.get('original_format', 'unknown')
+            validation_passed = processed_data.get('validation_passed', False)
+            
+            if not tasks:
+                print("❌ 没有找到任务数据")
+                return None
+            
+            # 输出加载结果
+            print(f"✅ 任务数据加载成功:")
+            print(f"   📋 任务数量: {len(tasks)}")
+            print(f"   👤 用户: {user_info.get('user', {}).get('username', 'Unknown')}")
+            print(f"   🎯 角色: {user_info.get('selectedRole', {}).get('label', 'Unknown')}")
+            print(f"   📊 数据源: {data_source}")
+            print(f"   📝 原始格式: {original_format}")
+            print(f"   ✅ 验证状态: {'通过' if validation_passed else '未验证'}")
+            
+            # 输出任务详情
+            print(f"📋 任务详情:")
+            for i, task in enumerate(tasks, 1):
+                task_name = task.get('name', task.get('task_name', '未命名任务'))
+                task_status = task.get('status', task.get('assignment_status', '未知状态'))
+                task_type = task.get('type', task.get('task_type', '未知类型'))
+                assignment_id = task.get('assignment_id', '无')
+                priority = task.get('priority', 'normal')
+                progress = task.get('progress', task.get('completion_percentage', 0))
+                
+                print(f"   {i}. {task_name}")
+                print(f"      状态: {task_status} | 类型: {task_type} | 优先级: {priority}")
+                print(f"      进度: {progress}% | 分配ID: {assignment_id}")
+                
+                # 显示额外信息（如果存在）
+                if task.get('estimated_duration'):
+                    print(f"      预计时长: {task.get('estimated_duration')}")
+                if task.get('requirements'):
+                    print(f"      要求: {', '.join(task.get('requirements', []))}")
+                if task.get('deliverables'):
+                    print(f"      交付物: {', '.join(task.get('deliverables', []))}")
+                print()
+            
+            # 数据质量检查
+            self._validate_loaded_tasks(tasks)
+            
+            return tasks
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON格式错误: {str(e)}")
+            return None
+        except Exception as e:
+            print(f"❌ 加载任务数据时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _convert_api_task_to_internal_format(self, api_task):
+        """将API返回的任务格式转换为内部格式"""
+        try:
+            # API任务格式转换为内部格式
+            converted_task = {
+                # 基本信息
+                'id': api_task.get('id'),
+                'assignment_id': api_task.get('id'),  # 使用任务分配ID
+                'name': api_task.get('task_name', '未命名任务'),
+                'task_name': api_task.get('task_name', '未命名任务'),
+                'description': api_task.get('task_description', ''),
+                'type': api_task.get('task_type', '未知类型'),
+                'task_type': api_task.get('task_type', '未知类型'),
+                'phase': api_task.get('task_phase', ''),
+                'task_phase': api_task.get('task_phase', ''),
+                
+                # 状态信息
+                'status': api_task.get('status', '未知状态'),
+                'assignment_status': api_task.get('status', '未知状态'),
+                'progress': api_task.get('progress', 0),
+                'assignment_progress': api_task.get('progress', 0),
+                'completion_percentage': api_task.get('progress', 0),
+                'performance_score': api_task.get('performance_score', 0),
+                
+                # 时间信息
+                'assigned_at': api_task.get('assigned_at'),
+                'last_update': api_task.get('last_update'),
+                'comments': api_task.get('comments', ''),
+                
+                # 任务属性
+                'priority': 'normal',  # 默认优先级
+                'estimated_duration': '',
+                'requirements': [],
+                'deliverables': [],
+                'execution_status': api_task.get('status', 'pending'),
+                'role_binding': '',
+                
+                # 元数据
+                'original_data': api_task,
+                'converted_at': datetime.now().isoformat(),
+                'data_source': 'api'
+            }
+            
+            return converted_task
+            
+        except Exception as e:
+            print(f"❌ 转换API任务失败: {str(e)}")
+            return None
+    
+    def _validate_loaded_tasks(self, tasks):
+        """验证加载的任务数据质量"""
+        try:
+            print(f"🔍 开始任务数据质量检查...")
+            
+            issues = []
+            
+            for i, task in enumerate(tasks):
+                task_issues = []
+                
+                # 检查必需字段
+                required_fields = ['name', 'status']
+                for field in required_fields:
+                    if not task.get(field) and not task.get(f'task_{field}'):
+                        task_issues.append(f"缺少{field}字段")
+                
+                # 检查ID字段
+                if not any([task.get('id'), task.get('task_id'), task.get('assignment_id')]):
+                    task_issues.append("缺少有效的ID字段")
+                
+                # 检查状态值
+                status = task.get('status', task.get('assignment_status', ''))
+                if status and status not in DataValidation.VALID_ASSIGNMENT_STATUSES:
+                    task_issues.append(f"状态值'{status}'不在标准列表中")
+                
+                # 检查优先级
+                priority = task.get('priority', '')
+                if priority and priority not in DataValidation.VALID_PRIORITIES:
+                    task_issues.append(f"优先级'{priority}'不在标准列表中")
+                
+                # 检查进度值
+                progress = task.get('progress', task.get('completion_percentage', 0))
+                if not isinstance(progress, (int, float)) or progress < 0 or progress > 100:
+                    task_issues.append(f"进度值'{progress}'无效")
+                
+                if task_issues:
+                    issues.append(f"任务{i+1}({task.get('name', '未命名')}): {', '.join(task_issues)}")
+            
+            if issues:
+                print(f"⚠️ 发现 {len(issues)} 个数据质量问题:")
+                for issue in issues[:5]:  # 只显示前5个问题
+                    print(f"   - {issue}")
+                if len(issues) > 5:
+                    print(f"   ... 还有 {len(issues) - 5} 个问题")
+            else:
+                print(f"✅ 任务数据质量检查通过")
+                
+        except Exception as e:
+            print(f"❌ 数据质量检查失败: {str(e)}")
+    
+    def mark_tasks_as_notified(self):
+        """标记任务已通知，避免重复弹窗"""
+        try:
+            task_file_path = os.path.join(os.getcwd(), 'received_tasks.json')
+            if os.path.exists(task_file_path):
+                # 备份原始文件并添加已通知标记
+                import shutil
+                backup_path = f"{task_file_path}.notified_{int(time.time())}"
+                shutil.copy2(task_file_path, backup_path)
+                print(f"任务已通知，数据已备份到: {backup_path}")
+                
+                # 删除原文件，避免下次启动时重复通知
+                os.remove(task_file_path)
+                print("原任务文件已删除，避免重复通知")
+                
+        except Exception as e:
+            print(f"标记任务已通知时出错: {str(e)}")
         
     @pyqtSlot(list)
     def on_tasks_loaded(self, tasks):
@@ -2295,11 +4151,22 @@ class DesktopManager(QWidget):
             QMessageBox.information(self, "提示", "当前没有任务")
             return
             
-        # 过滤出待提交的任务
-        pending_tasks = [task for task in tasks if task.get('status') == api_config.TASK_STATUS["PENDING"]]
+        # 过滤出待提交的任务 - 使用与check_and_notify_tasks相同的筛选条件
+        pending_status_list = [api_config.TASK_STATUS.get("PENDING", "待分配"), "未分配", "进行中"]
+        pending_tasks = [task for task in tasks if task.get('status') in pending_status_list]
+        
+        print(f"📋 任务筛选结果：")
+        print(f"   总任务数: {len(tasks)}")
+        print(f"   待提交任务数: {len(pending_tasks)}")
+        print(f"   筛选条件: {pending_status_list}")
         
         if not pending_tasks:
-            QMessageBox.information(self, "提示", "没有可提交的任务")
+            # 显示所有任务的状态用于调试
+            print("🔍 所有任务状态详情：")
+            for i, task in enumerate(tasks, 1):
+                task_name = task.get('name', task.get('task_name', '未命名'))
+                print(f"   {i}. {task_name} - 状态: '{task.get('status', '未知')}'")
+            QMessageBox.information(self, "提示", f"没有可提交的任务\n总任务数: {len(tasks)}\n待提交任务数: {len(pending_tasks)}")
             return
             
         # 显示任务选择对话框
@@ -2490,34 +4357,346 @@ class DesktopManager(QWidget):
         
     def closeEvent(self, event):
         """关闭事件"""
-        # 清理任务工作线程
-        if self.task_worker and self.task_worker.isRunning():
-            self.task_worker.terminate()
-            self.task_worker.wait()
+        try:
+            # 停止数据接收器
+            if hasattr(self, 'data_receiver') and self.data_receiver:
+                self.data_receiver.stop_all_receivers()
             
-        # 清理任务列表工作线程
-        if self.task_list_worker and self.task_list_worker.isRunning():
-            self.task_list_worker.terminate()
-            self.task_list_worker.wait()
+            # 停止简单文件监听器（如果存在）
+            if hasattr(self, 'file_watcher') and self.file_watcher:
+                self.file_watcher.deleteLater()
             
-        # 清理设备工作线程
-        if self.device_worker and self.device_worker.isRunning():
-            self.device_worker.terminate()
-            self.device_worker.wait()
+            # 清理任务工作线程
+            if self.task_worker and self.task_worker.isRunning():
+                self.task_worker.terminate()
+                self.task_worker.wait()
+                
+            # 清理任务列表工作线程
+            if self.task_list_worker and self.task_list_worker.isRunning():
+                self.task_list_worker.terminate()
+                self.task_list_worker.wait()
+                
+            # 清理设备工作线程
+            if self.device_worker and self.device_worker.isRunning():
+                self.device_worker.terminate()
+                self.device_worker.wait()
+                
+            # 清理批量设备工作线程
+            if self.batch_device_worker and self.batch_device_worker.isRunning():
+                self.batch_device_worker.terminate()
+                self.batch_device_worker.wait()
+                
+            # 关闭设备对话框
+            if self.device_dialog:
+                self.device_dialog.close()
             
-        # 清理批量设备工作线程
-        if self.batch_device_worker and self.batch_device_worker.isRunning():
-            self.batch_device_worker.terminate()
-            self.batch_device_worker.wait()
+            print("✅ 所有资源已清理")
             
-        # 关闭设备对话框
-        if self.device_dialog:
-            self.device_dialog.close()
+        except Exception as e:
+            print(f"❌ 清理资源时出错: {str(e)}")
             
         # 阻止默认的关闭行为
         event.ignore()
         # 调用退出应用程序方法，显示过渡页面并启动全屏浏览器
         self.exit_application()
+    
+    def check_and_notify_tasks(self):
+        """检查是否有待处理的任务并弹出通知 - 支持用户数据同步格式"""
+        try:
+            print("⏰ 定时器触发：正在检查是否有待处理的智能任务...")
+            print(f"   当前工作目录: {os.getcwd()}")
+            
+            # 检查received_data.json文件（用户数据同步格式）
+            data_file_path = os.path.join(os.getcwd(), 'received_data.json')
+            if os.path.exists(data_file_path):
+                print(f"✅ 找到数据文件: {data_file_path}")
+                
+                # 读取并检测数据格式
+                with open(data_file_path, 'r', encoding='utf-8') as f:
+                    raw_data = json.load(f)
+                
+                data_format = DataProcessor.detect_data_format(raw_data)
+                print(f"🔍 检测到数据格式: {data_format}")
+                
+                if data_format == 'user_data_sync':
+                    print("🔄 检测到用户数据同步格式，准备通过API获取任务...")
+                    self._handle_user_sync_tasks(raw_data)
+                    return
+                elif data_format == 'task_assignment':
+                    print("📋 检测到任务分配格式，使用现有任务数据...")
+                    # 继续使用现有逻辑处理任务分配格式
+                else:
+                    print(f"⚠️ 未知数据格式: {data_format}")
+            
+            # 检查received_tasks.json文件（传统格式）
+            task_file_path = os.path.join(os.getcwd(), 'received_tasks.json')
+            if not os.path.exists(task_file_path):
+                print(f"❌ 任务文件不存在: {task_file_path}")
+                print("💡 提示：请先发送用户数据同步或任务分配数据")
+                return
+            
+            print(f"✅ 找到任务文件: {task_file_path}")
+            
+            # 检查是否有从前端接收到的任务数据
+            received_tasks = self.load_received_tasks()
+            
+            if received_tasks and len(received_tasks) > 0:
+                print(f"✅ 成功加载 {len(received_tasks)} 个任务")
+                
+                # 过滤出待处理的任务
+                pending_status_list = [api_config.TASK_STATUS.get("PENDING", "待分配"), "未分配", "进行中"]
+                print(f"🔍 筛选条件：状态包含 {pending_status_list}")
+                
+                pending_tasks = []
+                for task in received_tasks:
+                    task_status = task.get('status', '未知')
+                    task_name = task.get('name', task.get('task_name', '未命名'))  # 支持两种字段名
+                    print(f"   检查任务: {task_name} - 状态: {task_status}")
+                    
+                    if task_status in pending_status_list:
+                        pending_tasks.append(task)
+                        print(f"     ✅ 符合条件，添加到待处理列表")
+                    else:
+                        print(f"     ❌ 不符合条件，跳过")
+                
+                if pending_tasks:
+                    print(f"🎯 发现 {len(pending_tasks)} 个待处理的智能推荐任务，准备弹出通知")
+                    self.show_task_notification(received_tasks, pending_tasks)
+                else:
+                    print("⚠️ 所有智能推荐任务都已完成，不弹出通知")
+            else:
+                print("❌ 未发现智能推荐任务数据")
+                
+        except Exception as e:
+            print(f"❌ 检查任务时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def _handle_user_sync_tasks(self, user_sync_data):
+        """处理用户数据同步格式，通过API获取任务"""
+        try:
+            # 处理用户数据同步
+            processed_data = DataProcessor.process_user_data_sync(user_sync_data)
+            user_info = processed_data.get('user_info', {})
+            user_data = user_info.get('user', {})
+            
+            username = user_data.get('username')
+            password = user_data.get('password')
+            user_id = user_data.get('id')
+            
+            print(f"👤 用户信息: {username} (ID: {user_id})")
+            
+            if not username or not password:
+                print("❌ 缺少用户认证信息，无法获取任务")
+                return
+            
+            # 创建API客户端并获取任务
+            print("🌐 正在通过API获取用户任务...")
+            api_client = APIClient()
+            
+            # 认证 - 传递用户类型和操作员类型
+            user_type = user_data.get('type')
+            # 从sync_info中获取operator_type（更准确）
+            operator_type = None
+            try:
+                with open('received_data.json', 'r', encoding='utf-8') as f:
+                    sync_data = json.load(f)
+                    operator_type = sync_data.get('sync_info', {}).get('operator', {}).get('operator_type')
+            except:
+                pass
+            
+            if api_client.authenticate(username, password, user_type, operator_type):
+                print("✅ 用户认证成功")
+                
+                # 获取任务
+                api_tasks = api_client.get_my_tasks()
+                if api_tasks:
+                    print(f"📋 从API获取到 {len(api_tasks)} 个任务")
+                    
+                    # 转换API任务格式为内部格式
+                    converted_tasks = []
+                    for api_task in api_tasks:
+                        converted_task = self._convert_api_task_to_internal_format(api_task)
+                        if converted_task:
+                            converted_tasks.append(converted_task)
+                    
+                    if converted_tasks:
+                        print(f"✅ 成功转换 {len(converted_tasks)} 个任务")
+                        
+                        # 保存转换后的任务到received_tasks.json
+                        task_data = {
+                            'tasks': converted_tasks,
+                            'user_info': user_info,
+                            'data_source': 'api_fetch',
+                            'fetch_time': datetime.now().isoformat(),
+                            'api_task_count': len(api_tasks),
+                            'converted_task_count': len(converted_tasks)
+                        }
+                        
+                        task_file_path = os.path.join(os.getcwd(), 'received_tasks.json')
+                        with open(task_file_path, 'w', encoding='utf-8') as f:
+                            json.dump(task_data, f, ensure_ascii=False, indent=2)
+                        
+                        print(f"💾 任务数据已保存到: {task_file_path}")
+                        
+                        # 过滤待处理任务并显示通知
+                        pending_status_list = ["待分配", "未分配", "进行中", "pending", "in_progress"]
+                        pending_tasks = [task for task in converted_tasks if task.get('status') in pending_status_list]
+                        
+                        if pending_tasks:
+                            print(f"🎯 发现 {len(pending_tasks)} 个待处理任务，显示通知")
+                            self.show_task_notification(converted_tasks, pending_tasks)
+                        else:
+                            print("⚠️ 所有任务都已完成，不显示通知")
+                    else:
+                        print("❌ 任务转换失败")
+                else:
+                    print("⚠️ 用户暂无任务")
+            else:
+                print("❌ 用户认证失败，无法获取任务")
+                
+        except Exception as e:
+            print(f"❌ 处理用户数据同步任务时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def show_task_notification(self, all_tasks, pending_tasks):
+        """显示任务通知弹窗 - 根据配置决定是否自动打开任务提交对话框"""
+        try:
+            # 获取用户信息用于日志显示
+            user_info = None
+            try:
+                with open('received_tasks.json', 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    user_info = data.get('user_info', {})
+            except:
+                pass
+            
+            username = "用户"
+            role_name = "未知角色"
+            if user_info:
+                username = user_info.get('user', {}).get('username', '用户')
+                role_name = user_info.get('selectedRole', {}).get('label', '未知角色')
+            
+            print(f"🎯 智能任务推荐通知")
+            print(f"👤 用户: {username}")
+            print(f"🔧 角色: {role_name}")
+            print(f"📋 发现 {len(pending_tasks)} 个智能推荐任务")
+            
+            # 列出前几个任务信息
+            for i, task in enumerate(pending_tasks[:5], 1):
+                task_name = task.get('name', task.get('task_name', '未命名任务'))  # 支持两种字段名
+                task_type = task.get('type', task.get('task_type', '未知类型'))   # 支持两种字段名
+                print(f"   {i}. {task_name} ({task_type})")
+            
+            if len(pending_tasks) > 5:
+                print(f"   ... 还有 {len(pending_tasks) - 5} 个任务")
+            
+            if self.auto_open_task_dialog:
+                # 自动打开任务提交对话框
+                print("🚀 自动打开任务提交对话框...")
+                self.status_label.setText(f"发现 {len(pending_tasks)} 个新任务，正在打开任务管理...")
+                
+                # 标记任务已通知
+                self.mark_tasks_as_notified()
+                
+                # 延迟一下再显示任务列表，让初始化完成
+                QTimer.singleShot(500, lambda: self.on_tasks_loaded(all_tasks))
+            else:
+                # 显示传统的通知弹窗让用户选择
+                print("💡 显示任务通知弹窗，等待用户选择...")
+                self.status_label.setText(f"发现 {len(pending_tasks)} 个新任务")
+                self._show_traditional_notification(all_tasks, pending_tasks, username, role_name)
+                
+        except Exception as e:
+            print(f"显示任务通知时出错: {str(e)}")
+            # 如果通知失败，仍然可以通过按钮查看任务
+            self.status_label.setText("有新任务可用")
+    
+    def _show_traditional_notification(self, all_tasks, pending_tasks, username, role_name):
+        """显示传统的任务通知弹窗"""
+        try:
+            # 构建通知消息
+            message = f"🎯 智能任务推荐通知\n\n"
+            message += f"👤 用户: {username}\n"
+            message += f"🔧 角色: {role_name}\n"
+            message += f"📋 发现 {len(pending_tasks)} 个智能推荐任务\n\n"
+            
+            # 显示前3个任务的简要信息
+            for i, task in enumerate(pending_tasks[:3], 1):
+                task_name = task.get('name', task.get('task_name', '未命名任务'))  # 支持两种字段名
+                task_type = task.get('type', task.get('task_type', '未知类型'))   # 支持两种字段名
+                message += f"{i}. {task_name} ({task_type})\n"
+            
+            if len(pending_tasks) > 3:
+                message += f"... 还有 {len(pending_tasks) - 3} 个任务\n"
+            
+            message += f"\n💡 这些任务是根据您的角色智能推荐的，点击确定查看详情。"
+            
+            # 创建自定义消息框
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("🚀 智能任务推荐")
+            msg_box.setText(message)
+            msg_box.setIcon(QMessageBox.Information)
+            
+            # 自定义按钮
+            view_tasks_btn = msg_box.addButton("📋 查看任务列表", QMessageBox.ActionRole)
+            later_btn = msg_box.addButton("⏰ 稍后处理", QMessageBox.RejectRole)
+            
+            # 设置样式
+            msg_box.setStyleSheet("""
+                QMessageBox {
+                    background-color: #f8f9fa;
+                    color: #2d3436;
+                    font-family: '微软雅黑';
+                    font-size: 12px;
+                }
+                QMessageBox QLabel {
+                    color: #2d3436;
+                    font-size: 12px;
+                    padding: 10px;
+                }
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #667eea, stop:1 #5a6fd8);
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    padding: 8px 16px;
+                    margin: 4px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #5a6fd8, stop:1 #4c63d2);
+                }
+                QPushButton:pressed {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #4c63d2, stop:1 #3b4ec7);
+                }
+            """)
+            
+            # 执行对话框并处理结果
+            msg_box.exec_()
+            
+            if msg_box.clickedButton() == view_tasks_btn:
+                print("用户选择查看任务列表")
+                # 标记任务已通知
+                self.mark_tasks_as_notified()
+                # 延迟一下再显示任务列表，让通知消息框完全关闭
+                QTimer.singleShot(300, lambda: self.on_tasks_loaded(all_tasks))
+            else:
+                print("用户选择稍后处理任务")
+                # 即使选择稍后处理，也标记为已通知，避免重复弹窗
+                self.mark_tasks_as_notified()
+                self.status_label.setText("任务待处理中...")
+                # 3秒后恢复正常状态
+                QTimer.singleShot(3000, lambda: self.status_label.setText("系统运行正常"))
+                
+        except Exception as e:
+            print(f"显示传统任务通知时出错: {str(e)}")
+            self.status_label.setText("有新任务可用")
 
 
 def main():
@@ -2528,8 +4707,23 @@ def main():
     app.setApplicationName("桌面管理器")
     app.setQuitOnLastWindowClosed(True)
     
+    # 检查命令行参数
+    auto_open_tasks = False
+    if len(sys.argv) > 1:
+        for arg in sys.argv[1:]:
+            if arg == "--auto-open-tasks":
+                auto_open_tasks = True
+                print("🚀 检测到命令行参数：--auto-open-tasks，将自动打开任务提交对话框")
+                break
+    
     # 创建并显示桌面管理器
     desktop_manager = DesktopManager()
+    
+    # 如果有命令行参数，覆盖默认设置
+    if auto_open_tasks:
+        desktop_manager.auto_open_task_dialog = True
+        print("✅ 已启用自动打开任务提交对话框")
+    
     desktop_manager.show()
     
     # 运行应用程序

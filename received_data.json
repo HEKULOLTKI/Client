@@ -1,19 +1,61 @@
 {
-  "user": {
-    "id": 6,
-    "username": "user1",
-    "role": "网络工程师",
-    "type": "操作员",
-    "status": "active",
-    "created_at": "2025-06-14T05:31:42",
-    "updated_at": "2025-06-14T05:31:42"
+  "action": "user_data_sync",
+  "sync_info": {
+    "sync_type": "current_user_export",
+    "sync_time": "2025-06-16T20:07:45.737212Z",
+    "operator": {
+      "user_id": 23,
+      "username": "user1",
+      "operator_role": "网络规划设计师",
+      "operator_type": "操作员"
+    },
+    "session": {
+      "ip_address": "127.0.0.1",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/5.15.2 Chrome/83.0.4103.122 Safari/537.36",
+      "login_time": 1750075630.1837308
+    },
+    "data_source": {
+      "database": "user_management",
+      "table": "users",
+      "version": "1.0",
+      "environment": "production"
+    }
   },
-  "selectedRole": {
-    "value": "网络工程师",
-    "label": "网络工程师",
-    "description": "负责网络设备配置、监控和故障排除",
-    "icon": "Monitor"
-  },
-  "timestamp": "2025-06-15T15:30:08.973Z",
-  "action": "role_selection"
+  "users": [
+    {
+      "id": 23,
+      "username": "user1",
+      "password": "123456",
+      "password_hash": "$2b$12$Kjbbit2SRKcUrSMKeHKRsuiSsnHGehiAXMfHYWZiGKHY81phz1EIi",
+      "role": "网络规划设计师",
+      "type": "操作员",
+      "status": "active",
+      "photo_data": null,
+      "created_at": "2025-06-16T14:05:19",
+      "updated_at": "2025-06-16T14:05:19",
+      "last_login": 1750075630.1837308,
+      "login_count": 1,
+      "is_locked": false,
+      "lock_reason": null,
+      "email": "user1@company.com",
+      "phone": null,
+      "department": "运维部",
+      "position": "网络规划设计师"
+    }
+  ],
+  "sync_summary": {
+    "total_users": 1,
+    "active_users": 1,
+    "inactive_users": 0,
+    "roles": [
+      "网络规划设计师"
+    ],
+    "types": [
+      "操作员"
+    ],
+    "sync_id": "sync_1750075665737",
+    "checksum": null,
+    "data_size": null,
+    "compression": "none"
+  }
 }

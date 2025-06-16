@@ -129,6 +129,189 @@
         ]
       }
     },
+    "/api/auth/online-users": {
+      "get": {
+        "tags": [
+          "认证"
+        ],
+        "summary": "Get Online Users",
+        "description": "获取在线用户列表（需要登录）",
+        "operationId": "get_online_users_api_auth_online_users_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/online-status/{user_id}": {
+      "get": {
+        "tags": [
+          "认证"
+        ],
+        "summary": "Get User Online Status",
+        "description": "获取指定用户的在线状态",
+        "operationId": "get_user_online_status_api_auth_online_status__user_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login-records": {
+      "get": {
+        "tags": [
+          "认证"
+        ],
+        "summary": "Get My Login Records",
+        "description": "获取当前用户的登录记录",
+        "operationId": "get_my_login_records_api_auth_login_records_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/system-stats": {
+      "get": {
+        "tags": [
+          "认证"
+        ],
+        "summary": "Get System Stats",
+        "description": "获取系统统计信息",
+        "operationId": "get_system_stats_api_auth_system_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/user-session-info": {
+      "get": {
+        "tags": [
+          "认证"
+        ],
+        "summary": "Get User Session Info",
+        "description": "获取当前用户的会话信息，包括IP地址和分配给用户的任务",
+        "operationId": "get_user_session_info_api_auth_user_session_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/user-complete-info": {
+      "get": {
+        "tags": [
+          "认证"
+        ],
+        "summary": "Get User Complete Info",
+        "description": "获取当前用户的完整信息（包含明文密码），用于数据同步",
+        "operationId": "get_user_complete_info_api_auth_user_complete_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/users": {
       "get": {
         "tags": [
@@ -694,6 +877,24 @@
               "title": "Task Type"
             },
             "description": "任务类型过滤"
+          },
+          {
+            "name": "role_binding",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "绑定角色过滤",
+              "title": "Role Binding"
+            },
+            "description": "绑定角色过滤"
           }
         ],
         "responses": {
@@ -818,6 +1019,24 @@
               "title": "Task Type"
             },
             "description": "任务类型过滤"
+          },
+          {
+            "name": "role_binding",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "绑定角色过滤",
+              "title": "Role Binding"
+            },
+            "description": "绑定角色过滤"
           }
         ],
         "responses": {
@@ -827,6 +1046,85 @@
               "application/json": {
                 "schema": {
 
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/by-role/{role_name}": {
+      "get": {
+        "tags": [
+          "任务管理"
+        ],
+        "summary": "Get Tasks By Role",
+        "description": "根据角色获取任务列表",
+        "operationId": "get_tasks_by_role_api_tasks_by_role__role_name__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Role Name"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "跳过的记录数",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "跳过的记录数"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "限制返回的记录数",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "限制返回的记录数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  },
+                  "title": "Response Get Tasks By Role Api Tasks By Role  Role Name  Get"
                 }
               }
             }
@@ -1569,7 +1867,7 @@
           "任务管理"
         ],
         "summary": "Update My Task",
-        "description": "更新我的任务进度",
+        "description": "更新我的任务进度（管理员可以更新所有用户的任务）",
         "operationId": "update_my_task_api_my_tasks__assignment_id__put",
         "security": [
           {
@@ -2345,6 +2643,185 @@
         }
       }
     },
+    "/api/system/status": {
+      "get": {
+        "tags": [
+          "系统管理"
+        ],
+        "summary": "Get System Status",
+        "description": "获取系统状态",
+        "operationId": "get_system_status_api_system_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/system/stats": {
+      "get": {
+        "tags": [
+          "系统管理"
+        ],
+        "summary": "Get System Stats",
+        "description": "获取系统统计信息",
+        "operationId": "get_system_stats_api_system_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/system/health": {
+      "get": {
+        "tags": [
+          "系统管理"
+        ],
+        "summary": "Health Check",
+        "description": "系统健康检查",
+        "operationId": "health_check_api_system_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system/cleanup/redis": {
+      "post": {
+        "tags": [
+          "系统管理"
+        ],
+        "summary": "Cleanup Redis",
+        "description": "清理Redis过期数据",
+        "operationId": "cleanup_redis_api_system_cleanup_redis_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/system/logs/recent": {
+      "get": {
+        "tags": [
+          "系统管理"
+        ],
+        "summary": "Get Recent Logs",
+        "description": "获取最近的系统日志",
+        "operationId": "get_recent_logs_api_system_logs_recent_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/system/performance": {
+      "get": {
+        "tags": [
+          "系统管理"
+        ],
+        "summary": "Get Performance Metrics",
+        "description": "获取性能指标",
+        "operationId": "get_performance_metrics_api_system_performance_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/": {
       "get": {
         "summary": "Root",
@@ -2874,6 +3351,28 @@
             "title": "Status",
             "default": "未分配"
           },
+          "assignee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee"
+          },
+          "role_binding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Binding"
+          },
           "id": {
             "type": "integer",
             "title": "Id"
@@ -2887,6 +3386,14 @@
             "type": "string",
             "format": "date-time",
             "title": "Update Time"
+          },
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/TaskAssignmentResponse"
+            },
+            "type": "array",
+            "title": "Assignments",
+            "default": []
           }
         },
         "type": "object",
@@ -3237,6 +3744,28 @@
             ],
             "title": "Status",
             "default": "未分配"
+          },
+          "assignee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee"
+          },
+          "role_binding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Binding"
           }
         },
         "type": "object",
@@ -3358,6 +3887,28 @@
             ],
             "title": "Status",
             "default": "未分配"
+          },
+          "assignee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee"
+          },
+          "role_binding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Binding"
           },
           "id": {
             "type": "integer",

@@ -129,4 +129,5 @@ Desktop.ini
 
 # 备份文件
 *.bak
-*.backup 
+*.backup
+desktop_icons_backup/

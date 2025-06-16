@@ -24,18 +24,26 @@ class APIServer(QObject):
         super().__init__(parent)
         self.app = Flask(__name__)
         
-        # 配置CORS，允许从localhost:3000访问
+        # 配置CORS，允许来自任何地址的访问
         CORS(self.app, resources={
             r"/upload": {
-                "origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
+                "origins": "*",  # 允许来自任何来源
                 "methods": ["POST"],
                 "allow_headers": ["Content-Type"]
             },
             r"/status": {
-                "origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
+                "origins": "*",  # 允许来自任何来源
+                "methods": ["GET"]
+            },
+            r"/get-tasks": {
+                "origins": "*",  # 允许来自任何来源
                 "methods": ["GET"]
             }
         })
+        
+        # 存储接收到的任务数据
+        self.received_tasks = []
+        self.user_session_info = {}
         
         self.setup_routes()
         
@@ -61,6 +69,10 @@ class APIServer(QObject):
                 # 检查是否是特定的用户角色选择数据
                 if self.is_role_selection_data(json_data):
                     print("检测到角色选择数据，准备关闭全屏网页...")
+                    
+                    # 提取并存储任务数据和用户信息
+                    self.extract_and_store_data(json_data)
+                    
                     # 发射信号通知主线程关闭全屏
                     self.close_fullscreen_signal.emit()
                 
@@ -78,39 +90,232 @@ class APIServer(QObject):
         def status():
             """API状态检查"""
             return jsonify({'message': 'API服务器运行正常', 'port': 8800})
+        
+        @self.app.route('/get-tasks', methods=['GET'])
+        def get_stored_tasks():
+            """获取存储的任务数据"""
+            return jsonify({
+                'tasks': self.received_tasks,
+                'user_info': self.user_session_info,
+                'status': 'success'
+            })
+    
+    def extract_and_store_data(self, data):
+        """提取并存储任务数据和用户信息"""
+        try:
+            # 存储任务数据
+            tasks = data.get('tasks', [])
+            self.received_tasks = tasks
+            print(f"存储了 {len(tasks)} 个任务")
+            
+            # 存储用户会话信息
+            self.user_session_info = {
+                'user': data.get('user', {}),
+                'selectedRole': data.get('selectedRole', {}),
+                'session': data.get('session', {}),
+                'timestamp': data.get('timestamp', '')
+            }
+            
+            # 将任务数据也保存到单独的文件
+            with open('received_tasks.json', 'w', encoding='utf-8') as f:
+                json.dump({
+                    'tasks': self.received_tasks,
+                    'user_info': self.user_session_info,
+                    'updated_at': data.get('timestamp', '')
+                }, f, ensure_ascii=False, indent=2)
+            
+            print(f"任务数据已保存到 received_tasks.json")
+            print(f"用户: {self.user_session_info.get('user', {}).get('username', 'Unknown')}")
+            print(f"角色: {self.user_session_info.get('selectedRole', {}).get('label', 'Unknown')}")
+            
+        except Exception as e:
+            print(f"提取存储数据时出错: {str(e)}")
     
     def is_role_selection_data(self, data):
-        """检查是否是角色选择数据"""
-        required_fields = ['user', 'selectedRole', 'timestamp', 'action']
+        """检查是否是有效的数据格式（支持新格式和旧格式）"""
         
-        # 检查所有必需字段是否存在
-        if not all(field in data for field in required_fields):
+        # 检查新格式：任务分配版本
+        if data.get('action') == 'task_deployment':
+            print(f"🆕 检测到新格式数据（任务分配版本）")
+            
+            # 检查新格式的必需字段
+            required_fields = ['action', 'deployment_info', 'assigned_tasks', 'deployment_summary']
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                print(f"❌ 新格式缺少必需字段: {missing_fields}")
+                return False
+            
+            # 验证deployment_info结构
+            deployment_info = data.get('deployment_info', {})
+            required_deployment_fields = ['target_role', 'deployment_time', 'operator']
+            missing_deployment_fields = [field for field in required_deployment_fields if field not in deployment_info]
+            
+            if missing_deployment_fields:
+                print(f"❌ deployment_info缺少字段: {missing_deployment_fields}")
+                return False
+            
+            # 验证operator结构
+            operator = deployment_info.get('operator', {})
+            required_operator_fields = ['user_id', 'username', 'operator_role']
+            missing_operator_fields = [field for field in required_operator_fields if field not in operator]
+            
+            if missing_operator_fields:
+                print(f"❌ operator缺少字段: {missing_operator_fields}")
+                return False
+            
+            # 验证任务数组
+            assigned_tasks = data.get('assigned_tasks', [])
+            if not assigned_tasks:
+                print(f"❌ assigned_tasks不能为空")
+                return False
+            
+            # 验证每个任务的基本字段
+            for i, task in enumerate(assigned_tasks):
+                required_task_fields = ['assignment_id', 'assignment_status', 'task_id', 'task_name', 'task_type']
+                missing_task_fields = [field for field in required_task_fields if field not in task]
+                if missing_task_fields:
+                    print(f"❌ 任务{i}缺少字段: {missing_task_fields}")
+                    return False
+            
+            print(f"✅ 新格式数据验证通过:")
+            print(f"   🎯 目标角色: {deployment_info.get('target_role')}")
+            print(f"   👤 操作员: {operator.get('username')} (ID: {operator.get('user_id')})")
+            print(f"   📋 任务数量: {len(assigned_tasks)}")
+            print(f"   🆔 部署ID: {data.get('deployment_summary', {}).get('deployment_id')}")
+            return True
+        
+        # 检查旧格式：传统任务版本
+        elif 'tasks' in data and data['tasks']:
+            print(f"📜 检测到旧格式数据（传统任务版本）")
+            
+            # 检查旧格式的基本字段
+            tasks = data.get('tasks', [])
+            if not isinstance(tasks, list) or not tasks:
+                print(f"❌ tasks字段格式不正确或为空")
+                return False
+            
+            # 验证任务格式
+            for i, task in enumerate(tasks):
+                if not isinstance(task, dict):
+                    print(f"❌ 任务{i}格式不正确，应为字典类型")
+                    return False
+                
+                # 检查任务的基本字段
+                required_task_fields = ['id', 'name']
+                missing_fields = [field for field in required_task_fields if field not in task]
+                if missing_fields:
+                    print(f"❌ 任务{i}缺少字段: {missing_fields}")
+                    return False
+            
+            print(f"✅ 旧格式数据验证通过:")
+            print(f"   📋 任务数量: {len(tasks)}")
+            if 'user' in data:
+                print(f"   👤 用户: {data['user'].get('username', '未知')}")
+            if 'selectedRole' in data:
+                print(f"   🎯 角色: {data['selectedRole'].get('label', '未知')}")
+            return True
+        
+        # 检查用户数据同步格式
+        elif data.get('action') == 'user_data_sync':
+            print(f"🔄 检测到用户数据同步格式")
+            
+            # 检查用户数据同步的必需字段
+            required_fields = ['action', 'sync_info', 'users', 'sync_summary']
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                print(f"❌ 用户数据同步缺少必需字段: {missing_fields}")
+                return False
+            
+            # 验证sync_info结构
+            sync_info = data.get('sync_info', {})
+            required_sync_fields = ['sync_type', 'sync_time', 'operator']
+            missing_sync_fields = [field for field in required_sync_fields if field not in sync_info]
+            
+            if missing_sync_fields:
+                print(f"❌ sync_info缺少字段: {missing_sync_fields}")
+                return False
+            
+            # 验证operator结构
+            operator = sync_info.get('operator', {})
+            required_operator_fields = ['user_id', 'username', 'operator_role']
+            missing_operator_fields = [field for field in required_operator_fields if field not in operator]
+            
+            if missing_operator_fields:
+                print(f"❌ operator缺少字段: {missing_operator_fields}")
+                return False
+            
+            # 验证用户数组
+            users = data.get('users', [])
+            if not users:
+                print(f"❌ users不能为空")
+                return False
+            
+            # 验证每个用户的基本字段
+            for i, user in enumerate(users):
+                required_user_fields = ['id', 'username', 'role', 'type', 'status']
+                missing_user_fields = [field for field in required_user_fields if field not in user]
+                if missing_user_fields:
+                    print(f"❌ 用户{i}缺少字段: {missing_user_fields}")
+                    return False
+            
+            print(f"✅ 用户数据同步验证通过:")
+            print(f"   🔄 同步类型: {sync_info.get('sync_type')}")
+            print(f"   👤 操作员: {operator.get('username')} (ID: {operator.get('user_id')})")
+            print(f"   👥 用户数量: {len(users)}")
+            print(f"   🆔 同步ID: {data.get('sync_summary', {}).get('sync_id')}")
+            return True
+        
+        # 检查是否是角色选择数据（特殊格式）
+        elif data.get('action') == 'role_selection':
+            print(f"🎭 检测到角色选择数据")
+            
+            required_fields = ['user', 'selectedRole', 'timestamp', 'action']
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                print(f"❌ 角色选择数据缺少必需字段: {missing_fields}")
+                return False
+            
+            # 检查user字段
+            user_data = data.get('user', {})
+            user_required_fields = ['id', 'username', 'role']
+            missing_user_fields = [field for field in user_required_fields if field not in user_data]
+            if missing_user_fields:
+                print(f"❌ user字段缺少必需子字段: {missing_user_fields}")
+                return False
+            
+            # 检查selectedRole字段
+            role_data = data.get('selectedRole', {})
+            role_required_fields = ['value', 'label']
+            missing_role_fields = [field for field in role_required_fields if field not in role_data]
+            if missing_role_fields:
+                print(f"❌ selectedRole字段缺少必需子字段: {missing_role_fields}")
+                return False
+            
+            print(f"✅ 角色选择数据验证通过:")
+            print(f"   👤 用户: {user_data.get('username')}")
+            print(f"   🎯 角色: {role_data.get('label')}")
+            return True
+        
+        # 无法识别的格式
+        else:
+            print(f"❌ 无法识别的数据格式:")
+            print(f"   📋 数据字段: {list(data.keys())}")
+            print(f"   🔍 action字段: {data.get('action', '未设置')}")
+            print(f"   📝 支持的格式:")
+            print(f"      - 任务分配: action='task_deployment' + deployment_info + assigned_tasks")
+            print(f"      - 用户同步: action='user_data_sync' + sync_info + users")
+            print(f"      - 旧格式: tasks数组 + 可选的user/selectedRole")
+            print(f"      - 角色选择: action='role_selection' + user + selectedRole")
             return False
-        
-        # 检查action字段是否为role_selection
-        if data.get('action') != 'role_selection':
-            return False
-        
-        # 检查user字段是否包含必要的子字段
-        user_data = data.get('user', {})
-        user_required_fields = ['id', 'username', 'role', 'type', 'status']
-        if not all(field in user_data for field in user_required_fields):
-            return False
-        
-        # 检查selectedRole字段是否包含必要的子字段
-        role_data = data.get('selectedRole', {})
-        role_required_fields = ['value', 'label', 'description']
-        if not all(field in role_data for field in role_required_fields):
-            return False
-        
-        print(f"角色选择数据验证通过: 用户={user_data.get('username')}, 角色={role_data.get('label')}")
-        return True
     
     def run(self):
         """运行API服务器"""
         try:
             print("API服务器启动中，监听8800端口...")
-            print("CORS已启用，允许来自localhost:3000的跨域请求")
+            print("CORS已启用，允许来自任何地址的跨域请求")
             self.app.run(host='0.0.0.0', port=8800, debug=False, threaded=True)
         except Exception as e:
             print(f"API服务器启动失败: {str(e)}")
@@ -298,7 +503,7 @@ class FullscreenBrowser(QMainWindow):
             print("上传JSON数据: POST http://localhost:8800/upload")
             print("检查API状态: GET http://localhost:8800/status")
             print("提示：当接收到包含用户角色选择的JSON数据时，将自动退出全屏模式并启动desktop_manager")
-            print("CORS支持已启用，前端可以正常发送跨域请求")
+            print("CORS支持已启用，任何地址的前端都可以发送跨域请求")
             print("键盘快捷键：")
             print("  ESC - 退出程序")
             print("  F11 - 切换全屏状态")
@@ -436,27 +641,29 @@ class FullscreenBrowser(QMainWindow):
                     else:
                         creationflags = 0
                     
+                    # 启动desktop_manager并传递自动打开任务对话框的参数
                     self.desktop_manager_process = subprocess.Popen([
-                        python_executable, desktop_manager_path
+                        python_executable, desktop_manager_path, "--auto-open-tasks"
                     ], creationflags=creationflags)
                 else:
                     # 非Windows平台
                     self.desktop_manager_process = subprocess.Popen([
-                        sys.executable, desktop_manager_path
+                        sys.executable, desktop_manager_path, "--auto-open-tasks"
                     ])
             else:
                 # 可执行文件，直接运行，不显示终端窗口
                 if sys.platform == "win32":
-                    # Windows平台隐藏窗口
+                    # Windows平台隐藏窗口，传递自动打开任务对话框的参数
                     self.desktop_manager_process = subprocess.Popen([
-                        desktop_manager_path
+                        desktop_manager_path, "--auto-open-tasks"
                     ], creationflags=subprocess.CREATE_NO_WINDOW)
                 else:
                     self.desktop_manager_process = subprocess.Popen([
-                        desktop_manager_path
+                        desktop_manager_path, "--auto-open-tasks"
                     ])
             
             print(f"desktop_manager 已启动，进程ID: {self.desktop_manager_process.pid}")
+            print("✅ 已传递 --auto-open-tasks 参数，desktop_manager 将自动打开任务提交对话框")
             
         except FileNotFoundError:
             print("错误：找不到 desktop_manager 程序或Python解释器")
