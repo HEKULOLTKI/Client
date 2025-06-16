@@ -509,7 +509,7 @@ class APIClient:
             
             # 根据operator_type或user_type确定登录类型
             # operator_type优先，因为它更准确地反映了用户的操作员类型
-            login_type = operator_type or user_type or 'password'
+            login_type = operator_type or user_type or '操作员'  # 默认使用"操作员"而不是"password"
             
             # 准备登录数据
             login_data = {
@@ -1951,7 +1951,10 @@ class TaskSubmissionWorker(QThread):
             # 步骤1：获取访问令牌
             self.progress_updated.emit("正在获取访问令牌...")
             if not self.authenticate():
-                self.error_occurred.emit("认证失败，请检查用户名和密码")
+                # 刷新配置以获取最新的认证信息
+                api_config.refresh_all_config()
+                error_msg = f"认证失败，请检查配置信息：\n用户名: {api_config.DEFAULT_USERNAME}\n登录类型: {api_config.DEFAULT_LOGIN_TYPE}\n请确保用户类型与登录类型匹配"
+                self.error_occurred.emit(error_msg)
                 return
             
             # 步骤2：提交选中的任务
@@ -2080,7 +2083,10 @@ class TaskListWorker(QThread):
         try:
             # 认证
             if not self.authenticate():
-                self.error_occurred.emit("认证失败，请检查用户名和密码")
+                # 刷新配置以获取最新的认证信息
+                api_config.refresh_all_config()
+                error_msg = f"认证失败，请检查配置信息：\n用户名: {api_config.DEFAULT_USERNAME}\n登录类型: {api_config.DEFAULT_LOGIN_TYPE}\n请确保用户类型与登录类型匹配"
+                self.error_occurred.emit(error_msg)
                 return
             
             # 获取任务列表
@@ -2100,6 +2106,8 @@ class TaskListWorker(QThread):
                 "grant_type": "password"
             }
             
+            print(f"🔐 TaskListWorker认证: {auth_data['username']} / {auth_data['login_type']}")
+            
             response = requests.post(
                 f"{self.api_base_url}{api_config.API_ENDPOINTS['login']}",
                 data=auth_data,
@@ -2110,20 +2118,29 @@ class TaskListWorker(QThread):
             if response.status_code == 200:
                 token_data = response.json()
                 self.access_token = token_data.get("access_token")
+                print(f"✅ TaskListWorker认证成功")
                 return True
             else:
+                print(f"❌ TaskListWorker认证失败: {response.status_code} - {response.text}")
                 return False
                 
         except Exception as e:
+            print(f"❌ TaskListWorker认证异常: {str(e)}")
             return False
             
     def get_my_tasks(self):
         """获取当前用户的任务"""
         try:
+            if not self.access_token:
+                print("❌ TaskListWorker: 未认证，无法获取任务")
+                return []
+                
             headers = {
                 "Authorization": f"Bearer {self.access_token}",
                 "Content-Type": "application/json"
             }
+            
+            print(f"📋 TaskListWorker: 正在获取任务列表...")
             
             response = requests.get(
                 f"{self.api_base_url}{api_config.API_ENDPOINTS['my_tasks']}",
@@ -2132,11 +2149,15 @@ class TaskListWorker(QThread):
             )
             
             if response.status_code == 200:
-                return response.json()
+                tasks = response.json()
+                print(f"✅ TaskListWorker: 成功获取 {len(tasks)} 个任务")
+                return tasks
             else:
+                print(f"❌ TaskListWorker: 获取任务失败: {response.status_code} - {response.text}")
                 return []
                 
         except Exception as e:
+            print(f"❌ TaskListWorker: 获取任务异常: {str(e)}")
             return []
 
 
@@ -3085,6 +3106,9 @@ class DesktopManager(QWidget):
     def load_role_data(self):
         """从JSON文件加载角色数据 - 使用增强的数据处理器"""
         try:
+            # 刷新API配置（从JSON文件重新获取用户名、密码、登录类型）
+            api_config.refresh_all_config()
+            
             json_file_path = os.path.join(os.getcwd(), "received_data.json")
             if os.path.exists(json_file_path):
                 print(f"📂 正在加载角色数据: {json_file_path}")
