@@ -17,6 +17,7 @@ from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 import config
 from pet_widget import PetWidget
 from chat_widget import ChatWidget
+from online_chat_widget import OnlineChatWidget
 from transition_screen import TransitionScreen
 from openai_api import OpenAIChat
 from tuopo_widget import TuopoWidget
@@ -2817,6 +2818,7 @@ class DesktopManager(QWidget):
         super().__init__()
         self.pet_widget = None
         self.chat_widget = None
+        self.online_chat_widget = None  # 添加在线聊天窗口实例
         self.tuopo_widget = None  # 添加拓扑图窗口实例
         self.transition_page = None
         self.openai_chat = None  # 添加OpenAI聊天实例
@@ -3494,20 +3496,24 @@ class DesktopManager(QWidget):
             self.status_label.setText("宠物已显示")
             
     def show_chat(self):
-        """显示/隐藏聊天窗口"""
-        if not self.chat_widget:
-            # 创建OpenAI聊天实例（如果还没有的话）
-            if not self.openai_chat:
-                self.openai_chat = OpenAIChat()
-            # 传递openai_chat参数给ChatWidget
-            self.chat_widget = ChatWidget(self.openai_chat)
+        """显示/隐藏在线聊天窗口"""
+        if not self.online_chat_widget:
+            # 创建在线聊天窗口实例
+            self.online_chat_widget = OnlineChatWidget()
             
-        if self.chat_widget.isVisible():
-            self.chat_widget.hide()
-            self.status_label.setText("聊天窗口已隐藏")
+            # 设置用户信息（可以从角色数据中获取）
+            if hasattr(self, 'current_role_data') and self.current_role_data:
+                username = self.current_role_data.get('username', '当前用户')
+                self.online_chat_widget.set_user_info(username)
+            else:
+                self.online_chat_widget.set_user_info('当前用户')
+            
+        if self.online_chat_widget.isVisible():
+            self.online_chat_widget.hide()
+            self.status_label.setText("在线聊天窗口已隐藏")
         else:
-            self.chat_widget.show()
-            self.status_label.setText("聊天窗口已显示")
+            self.online_chat_widget.show()
+            self.status_label.setText("在线聊天窗口已显示")
             
     def show_settings_action(self):
         """显示设置"""
@@ -4112,7 +4118,10 @@ class DesktopManager(QWidget):
             print("宠物窗口已关闭")
         if self.chat_widget:
             self.chat_widget.close()
-            print("聊天窗口已关闭")
+            print("AI宠物聊天窗口已关闭")
+        if self.online_chat_widget:
+            self.online_chat_widget.close()
+            print("在线聊天窗口已关闭")
         if self.tuopo_widget:
             self.tuopo_widget.close()
             print("拓扑图窗口已关闭")
