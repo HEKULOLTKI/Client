@@ -3,12 +3,15 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLineEdit, QPushButton,
                            QToolButton, QSizePolicy, QProgressBar, QLayout,
                            QTextEdit, QFileDialog, QApplication, QMessageBox,
                            QDialog, QDialogButtonBox)
-from PyQt5.QtCore import Qt, QPoint, QSize, QTimer, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QPoint, QSize, QTimer, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal, QUrl
 from PyQt5.QtGui import (QFont, QIcon, QPixmap, QPainter, QColor, QPainterPath, 
-                        QPen, QFontMetrics)
+                        QPen, QFontMetrics, QDesktopServices, QCursor)
 import requests
 import time
 import json
+import os
+import subprocess
+import webbrowser
 from datetime import datetime
 import online_chat_config as config
 from token_manager import TokenManager
@@ -196,6 +199,286 @@ class OnlineChatBubble(QFrame):
             layout.addLayout(time_layout)
         else:
             layout.addLayout(msg_layout)
+
+class FileChatBubble(QFrame):
+    """文件消息气泡组件 - 支持点击下载"""
+    def __init__(self, file_info, is_user=True, sender_name="", timestamp="", parent=None):
+        super().__init__(parent)
+        self.is_user = is_user
+        self.file_info = file_info
+        self.sender_name = sender_name
+        self.timestamp = timestamp
+        
+        # 从文件信息中提取数据
+        self.file_name = file_info.get('file_name', '未知文件')
+        self.file_url = file_info.get('file_url', '')
+        self.file_size = file_info.get('file_size', 0)
+        self.content = file_info.get('content', f"📎 {self.file_name}")
+        
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setCursor(QCursor(Qt.PointingHandCursor))
+        
+        self.setStyleSheet("""
+            FileChatBubble {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """设置UI界面"""
+        # 主布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+        
+        # 消息信息栏（发送者和时间）
+        if not self.is_user:
+            info_layout = QHBoxLayout()
+            info_layout.setContentsMargins(50, 0, 0, 0)
+            
+            sender_label = QLabel(self.sender_name)
+            sender_label.setFont(QFont("Microsoft YaHei UI", 8))
+            sender_label.setStyleSheet("color: #666666;")
+            
+            time_label = QLabel(self.timestamp)
+            time_label.setFont(QFont("Microsoft YaHei UI", 8))
+            time_label.setStyleSheet("color: #999999;")
+            
+            info_layout.addWidget(sender_label)
+            info_layout.addStretch()
+            info_layout.addWidget(time_label)
+            
+            layout.addLayout(info_layout)
+        
+        # 消息主体布局
+        msg_layout = QHBoxLayout()
+        msg_layout.setContentsMargins(0, 0, 0, 0)
+        msg_layout.setSpacing(10)
+        
+        # 创建文件消息容器
+        file_container = QFrame()
+        file_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        file_container.setStyleSheet(f"""
+            QFrame {{
+                background-color: {'#27ae60' if self.is_user else '#ecf0f1'};
+                border: 2px solid {'#2ecc71' if self.is_user else '#bdc3c7'};
+                border-radius: 18px;
+                padding: 10px;
+            }}
+            QFrame:hover {{
+                background-color: {'#229954' if self.is_user else '#d5dbdb'};
+                border-color: {'#27ae60' if self.is_user else '#95a5a6'};
+            }}
+        """)
+        
+        container_layout = QVBoxLayout(file_container)
+        container_layout.setContentsMargins(15, 10, 15, 10)
+        container_layout.setSpacing(8)
+        
+        # 文件图标和名称行
+        file_header = QHBoxLayout()
+        file_header.setSpacing(10)
+        
+        # 文件图标
+        file_icon = QLabel(self.get_file_icon())
+        file_icon.setFont(QFont("Microsoft YaHei UI", 20))
+        file_icon.setFixedSize(40, 40)
+        file_icon.setAlignment(Qt.AlignCenter)
+        file_icon.setStyleSheet(f"""
+            QLabel {{
+                background-color: {'rgba(255,255,255,0.2)' if self.is_user else 'white'};
+                border-radius: 20px;
+                color: {'white' if self.is_user else '#2c3e50'};
+            }}
+        """)
+        
+        # 文件信息
+        file_info_layout = QVBoxLayout()
+        file_info_layout.setSpacing(2)
+        
+        # 文件名
+        file_name_label = QLabel(self.file_name)
+        file_name_label.setFont(QFont("Microsoft YaHei UI", 10, QFont.Bold))
+        file_name_label.setStyleSheet(f"""
+            QLabel {{
+                color: {'white' if self.is_user else '#2c3e50'};
+                background: transparent;
+            }}
+        """)
+        file_name_label.setWordWrap(True)
+        
+        # 文件大小
+        size_text = self.format_file_size(self.file_size)
+        file_size_label = QLabel(size_text)
+        file_size_label.setFont(QFont("Microsoft YaHei UI", 8))
+        file_size_label.setStyleSheet(f"""
+            QLabel {{
+                color: {'rgba(255,255,255,0.8)' if self.is_user else '#7f8c8d'};
+                background: transparent;
+            }}
+        """)
+        
+        file_info_layout.addWidget(file_name_label)
+        file_info_layout.addWidget(file_size_label)
+        
+        file_header.addWidget(file_icon)
+        file_header.addLayout(file_info_layout)
+        file_header.addStretch()
+        
+        # 下载按钮
+        download_btn = QPushButton("📥 点击下载")
+        download_btn.setFont(QFont("Microsoft YaHei UI", 9))
+        download_btn.setFixedHeight(30)
+        download_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        download_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {'rgba(255,255,255,0.2)' if self.is_user else '#3498db'};
+                color: {'white' if self.is_user else 'white'};
+                border: {'1px solid rgba(255,255,255,0.3)' if self.is_user else 'none'};
+                border-radius: 15px;
+                padding: 5px 15px;
+            }}
+            QPushButton:hover {{
+                background-color: {'rgba(255,255,255,0.3)' if self.is_user else '#2980b9'};
+            }}
+            QPushButton:pressed {{
+                background-color: {'rgba(255,255,255,0.1)' if self.is_user else '#21618c'};
+            }}
+        """)
+        download_btn.clicked.connect(self.download_file)
+        
+        container_layout.addLayout(file_header)
+        container_layout.addWidget(download_btn)
+        
+        # 创建头像
+        avatar = QLabel()
+        avatar.setFixedSize(40, 40)
+        if self.is_user:
+            avatar_pixmap = QPixmap(config.get_avatar_path('user'))
+        else:
+            avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+        
+        avatar.setPixmap(avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        avatar.setStyleSheet("""
+            QLabel {
+                border-radius: 20px;
+                background-color: white;
+                padding: 2px;
+                border: 2px solid #E8E8E8;
+            }
+        """)
+        
+        # 设置最终布局
+        if self.is_user:
+            msg_layout.addStretch(1)  # 左侧弹性空间
+            msg_layout.addWidget(file_container)  # 文件消息气泡
+            msg_layout.addWidget(avatar)  # 头像靠右
+        else:
+            msg_layout.addWidget(avatar)  # 头像靠左
+            msg_layout.addWidget(file_container)  # 文件消息气泡
+            msg_layout.addStretch(1)  # 右侧弹性空间
+        
+        # 用户消息显示时间在右侧
+        if self.is_user and self.timestamp:
+            time_layout = QHBoxLayout()
+            time_layout.setContentsMargins(0, 0, 50, 0)
+            time_layout.addStretch()
+            
+            time_label = QLabel(self.timestamp)
+            time_label.setFont(QFont("Microsoft YaHei UI", 8))
+            time_label.setStyleSheet("color: #999999;")
+            time_layout.addWidget(time_label)
+            
+            layout.addLayout(msg_layout)
+            layout.addLayout(time_layout)
+        else:
+            layout.addLayout(msg_layout)
+    
+    def get_file_icon(self):
+        """根据文件类型返回对应的图标"""
+        if not self.file_name:
+            return "📄"
+        
+        file_ext = os.path.splitext(self.file_name.lower())[1]
+        
+        # 图片文件
+        if file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']:
+            return "🖼️"
+        # 文档文件
+        elif file_ext in ['.pdf']:
+            return "📕"
+        elif file_ext in ['.doc', '.docx']:
+            return "📘"
+        elif file_ext in ['.xls', '.xlsx']:
+            return "📗"
+        elif file_ext in ['.ppt', '.pptx']:
+            return "📙"
+        elif file_ext in ['.txt']:
+            return "📝"
+        # 代码文件
+        elif file_ext in ['.py', '.js', '.html', '.css', '.json', '.xml', '.yml', '.yaml']:
+            return "💻"
+        # 压缩文件
+        elif file_ext in ['.zip', '.rar', '.7z', '.tar', '.gz']:
+            return "🗜️"
+        # 音频文件
+        elif file_ext in ['.mp3', '.wav', '.flac', '.aac']:
+            return "🎵"
+        # 视频文件
+        elif file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv']:
+            return "🎬"
+        else:
+            return "📄"
+    
+    def format_file_size(self, size_bytes):
+        """格式化文件大小"""
+        if size_bytes == 0:
+            return "0 B"
+        size_names = ["B", "KB", "MB", "GB"]
+        i = 0
+        while size_bytes >= 1024 and i < len(size_names) - 1:
+            size_bytes /= 1024.0
+            i += 1
+        return f"{size_bytes:.1f} {size_names[i]}"
+    
+    def download_file(self):
+        """下载文件"""
+        if not self.file_url:
+            QMessageBox.warning(self, "下载失败", "文件URL不存在")
+            return
+        
+        try:
+            # 构建完整的文件URL
+            base_url = config.CHAT_API_BASE_URL
+            if self.file_url.startswith('http'):
+                full_url = self.file_url
+            else:
+                full_url = f"{base_url}{self.file_url}"
+            
+            print(f"📥 开始下载文件: {self.file_name}")
+            print(f"🔗 文件URL: {full_url}")
+            
+            # 方式1：使用浏览器下载（推荐，因为可以利用浏览器的下载管理器）
+            QDesktopServices.openUrl(QUrl(full_url))
+            
+            # 显示下载提示
+            QMessageBox.information(self, "下载开始", 
+                                  f"文件 {self.file_name} 已在浏览器中打开\n"
+                                  f"如果是图片或PDF，将在浏览器中预览\n"
+                                  f"其他文件类型将自动下载")
+            
+        except Exception as e:
+            print(f"❌ 文件下载失败: {str(e)}")
+            QMessageBox.critical(self, "下载失败", f"文件下载失败：{str(e)}")
+    
+    def mousePressEvent(self, event):
+        """鼠标点击事件 - 整个气泡都可以点击下载"""
+        if event.button() == Qt.LeftButton:
+            self.download_file()
+        super().mousePressEvent(event)
 
 class OnlineModernButton(QPushButton):
     """现代风格按钮"""
@@ -880,12 +1163,17 @@ class OnlineChatWidget(QWidget):
         """设置聊天室ID"""
         self.api.set_room_id(room_id)
         
-    def add_message(self, content, is_user=False, sender_name="", timestamp=""):
+    def add_message(self, content, is_user=False, sender_name="", timestamp="", message_type="text", file_info=None):
         """添加消息到聊天区域"""
         if not timestamp:
             timestamp = datetime.now().strftime("%H:%M")
+        
+        # 如果是文件消息，使用FileChatBubble
+        if message_type == "file" and file_info:
+            bubble = FileChatBubble(file_info, is_user, sender_name, timestamp)
+        else:
+            bubble = OnlineChatBubble(content, is_user, sender_name, timestamp)
             
-        bubble = OnlineChatBubble(content, is_user, sender_name, timestamp)
         self.chat_layout.addWidget(bubble)
         
         # 滚动到底部
@@ -1149,6 +1437,7 @@ class OnlineChatWidget(QWidget):
         content = message_data.get('content', '')
         sender_name = message_data.get('sender_name', self.current_user)
         timestamp = message_data.get('timestamp', '')
+        message_type = message_data.get('message_type', 'text')
         
         # 格式化时间戳
         if timestamp:
@@ -1159,10 +1448,21 @@ class OnlineChatWidget(QWidget):
                 formatted_time = datetime.now().strftime("%H:%M")
         else:
             formatted_time = datetime.now().strftime("%H:%M")
+        
+        # 构建文件信息（如果是文件消息）
+        file_info = None
+        if message_type == "file":
+            file_info = {
+                'file_name': message_data.get('file_name', '未知文件'),
+                'file_url': message_data.get('file_url', ''),
+                'file_size': message_data.get('file_size', 0),
+                'content': content
+            }
             
         # 发送的消息总是当前用户的，强制设置为True
-        self.add_message(content, is_user=True, sender_name=sender_name, timestamp=formatted_time)
-        print(f"发送消息: '{content}' | 发送者: '{sender_name}' | 强制显示在右边")
+        self.add_message(content, is_user=True, sender_name=sender_name, 
+                        timestamp=formatted_time, message_type=message_type, file_info=file_info)
+        print(f"发送消息: '{content}' | 类型: '{message_type}' | 发送者: '{sender_name}' | 强制显示在右边")
         
     def on_messages_loaded(self, messages):
         """消息加载完成处理"""
@@ -1203,12 +1503,13 @@ class OnlineChatWidget(QWidget):
             sender_name = message.get('sender_name', '未知用户')
             timestamp = message.get('timestamp', '')
             sender_id = message.get('sender_id', 0)
+            message_type = message.get('message_type', 'text')
             
             # 增强的用户身份判断逻辑
             is_user = sender_name in possible_user_names
             
             # 调试输出
-            print(f"消息: '{content[:20]}...' | 发送者: '{sender_name}' | 是当前用户: {is_user}")
+            print(f"消息: '{content[:20]}...' | 类型: '{message_type}' | 发送者: '{sender_name}' | 是当前用户: {is_user}")
             
             # 格式化时间戳
             if timestamp:
@@ -1219,9 +1520,23 @@ class OnlineChatWidget(QWidget):
                     formatted_time = ""
             else:
                 formatted_time = ""
+            
+            # 构建文件信息（如果是文件消息）
+            file_info = None
+            if message_type == "file":
+                file_info = {
+                    'file_name': message.get('file_name', '未知文件'),
+                    'file_url': message.get('file_url', ''),
+                    'file_size': message.get('file_size', 0),
+                    'content': content
+                }
                 
             # 创建消息气泡并添加消息ID
-            bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time)
+            if message_type == "file" and file_info:
+                bubble = FileChatBubble(file_info, is_user, sender_name, formatted_time)
+            else:
+                bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time)
+                
             if message_id:
                 bubble.message_id = message_id
             self.chat_layout.addWidget(bubble)
