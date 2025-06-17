@@ -3,9 +3,10 @@ import json
 import threading
 import subprocess
 import os
+import time
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal, QObject
+from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal, QObject, QThread
 from PyQt5.QtGui import QKeySequence
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -15,6 +16,42 @@ from transition_screen import TransitionScreen
 # 禁用Flask的默认日志输出
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
+
+class ProcessMonitor(QThread):
+    """进程监控线程 - 监控desktop_manager进程状态"""
+    process_ended = pyqtSignal()
+    
+    def __init__(self, process):
+        super().__init__()
+        self.process = process
+        self.running = True
+        
+    def run(self):
+        """监控进程状态"""
+        print(f"🔍 开始监控desktop_manager进程 (PID: {self.process.pid})...")
+        
+        while self.running and self.process:
+            try:
+                # 检查进程是否仍在运行
+                return_code = self.process.poll()
+                if return_code is not None:
+                    # 进程已结束
+                    print(f"🔔 检测到desktop_manager进程已结束，返回代码: {return_code}")
+                    self.process_ended.emit()
+                    break
+                    
+                # 每500毫秒检查一次，提高响应速度
+                time.sleep(0.5)
+                
+            except Exception as e:
+                print(f"❌ 监控进程时出错: {str(e)}")
+                # 即使出错也尝试清理
+                self.process_ended.emit()
+                break
+                
+    def stop(self):
+        """停止监控"""
+        self.running = False
 
 class APIServer(QObject):
     # 定义信号用于跨线程通信
@@ -327,6 +364,7 @@ class FullscreenBrowser(QMainWindow):
         self.api_server = None
         self.api_thread = None
         self.desktop_manager_process = None
+        self.process_monitor = None
         self.transition_screen = None
         # 默认情况下允许关闭desktop_manager
         self.should_close_desktop_manager = True
@@ -364,6 +402,80 @@ class FullscreenBrowser(QMainWindow):
             print("API服务器线程已启动")
         except Exception as e:
             print(f"启动API服务器时出错: {str(e)}")
+    
+    def cleanup_json_files(self):
+        """清理JSON文件"""
+        try:
+            print("🧹 开始清理JSON文件...")
+            print(f"   当前工作目录: {os.getcwd()}")
+            
+            json_files = [
+                'received_data.json',
+                'received_tasks.json'
+            ]
+            
+            deleted_files = []
+            
+            # 检查并删除主要JSON文件
+            for file_path in json_files:
+                full_path = os.path.abspath(file_path)
+                print(f"🔍 检查文件: {full_path}")
+                
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        deleted_files.append(file_path)
+                        print(f"✅ 已删除JSON文件: {file_path}")
+                    except Exception as e:
+                        print(f"❌ 删除文件 {file_path} 失败: {str(e)}")
+                else:
+                    print(f"⚪ 文件不存在: {file_path}")
+            
+            # 清理备份文件（.notified_* 结尾的文件）
+            current_dir = os.getcwd()
+            print(f"🔍 扫描备份文件目录: {current_dir}")
+            
+            backup_files = []
+            try:
+                for filename in os.listdir(current_dir):
+                    if filename.startswith('received_tasks.json.notified_'):
+                        backup_files.append(filename)
+                
+                print(f"🔍 找到 {len(backup_files)} 个备份文件")
+                
+                for filename in backup_files:
+                    try:
+                        backup_path = os.path.join(current_dir, filename)
+                        os.remove(backup_path)
+                        deleted_files.append(filename)
+                        print(f"✅ 已删除备份文件: {filename}")
+                    except Exception as e:
+                        print(f"❌ 删除备份文件 {filename} 失败: {str(e)}")
+                        
+            except Exception as e:
+                print(f"❌ 扫描备份文件时出错: {str(e)}")
+            
+            if deleted_files:
+                print(f"🧹 JSON文件清理完成，共删除 {len(deleted_files)} 个文件:")
+                for file in deleted_files:
+                    print(f"   - {file}")
+            else:
+                print("🧹 没有找到需要清理的JSON文件")
+                
+        except Exception as e:
+            print(f"❌ 清理JSON文件时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def on_desktop_manager_ended(self):
+        """当desktop_manager进程结束时的处理"""
+        print("🔔 检测到desktop_manager进程已结束，开始清理JSON文件...")
+        self.cleanup_json_files()
+        
+        # 停止进程监控
+        if self.process_monitor:
+            self.process_monitor.stop()
+            self.process_monitor = None
     
     def close_fullscreen(self):
         """关闭全屏模式（线程安全）"""
@@ -665,14 +777,34 @@ class FullscreenBrowser(QMainWindow):
             print(f"desktop_manager 已启动，进程ID: {self.desktop_manager_process.pid}")
             print("✅ 已传递 --auto-open-tasks 参数，desktop_manager 将自动打开任务提交对话框")
             
+            # 启动进程监控
+            self.start_process_monitor()
+            
         except FileNotFoundError:
             print("错误：找不到 desktop_manager 程序或Python解释器")
         except Exception as e:
             print(f"启动 desktop_manager 时出错: {str(e)}")
     
+    def start_process_monitor(self):
+        """启动进程监控"""
+        if self.desktop_manager_process and self.desktop_manager_process.poll() is None:
+            # 进程仍在运行，启动监控
+            self.process_monitor = ProcessMonitor(self.desktop_manager_process)
+            self.process_monitor.process_ended.connect(self.on_desktop_manager_ended)
+            self.process_monitor.start()
+            print("🔍 已启动desktop_manager进程监控，将在进程结束时自动清理JSON文件")
+    
     def closeEvent(self, event):
         """窗口关闭事件"""
         print("正在关闭应用程序...")
+        
+        # 停止进程监控
+        if self.process_monitor:
+            print("正在停止进程监控...")
+            self.process_monitor.stop()
+            self.process_monitor.quit()
+            self.process_monitor.wait(3000)  # 等待最多3秒
+            self.process_monitor = None
         
         # 只有在明确需要关闭desktop_manager时才关闭它
         if hasattr(self, 'should_close_desktop_manager') and self.should_close_desktop_manager:
@@ -687,6 +819,10 @@ class FullscreenBrowser(QMainWindow):
                         # 如果进程没有正常结束，强制杀死
                         self.desktop_manager_process.kill()
                     print("desktop_manager 进程已关闭")
+                    
+                    # 如果手动关闭了desktop_manager，也清理JSON文件
+                    self.cleanup_json_files()
+                    
                 except Exception as e:
                     print(f"关闭 desktop_manager 进程时出错: {str(e)}")
         else:

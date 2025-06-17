@@ -4099,6 +4099,9 @@ class DesktopManager(QWidget):
         """退出应用程序并启动全屏浏览器"""
         print("开始退出desktop_manager应用...")
         
+        # 再次确保JSON文件被清理（双重保险）
+        self.cleanup_json_files()
+        
         # 步骤1：清理资源 - 关闭所有子窗口
         self.close_all_windows()
         
@@ -4107,7 +4110,7 @@ class DesktopManager(QWidget):
         
         # 步骤3：退出desktop_manager应用
         QTimer.singleShot(100, QApplication.quit)
-        
+    
     def close_all_windows(self):
         """关闭所有子窗口"""
         print("正在清理资源和关闭所有子窗口...")
@@ -4229,6 +4232,11 @@ class DesktopManager(QWidget):
     def closeEvent(self, event):
         """关闭事件"""
         try:
+            print("🔔 Desktop Manager 正在关闭，开始清理JSON文件...")
+            
+            # 立即清理JSON文件
+            self.cleanup_json_files()
+            
             # 停止数据接收器
             if hasattr(self, 'data_receiver') and self.data_receiver:
                 self.data_receiver.stop_all_receivers()
@@ -4270,6 +4278,44 @@ class DesktopManager(QWidget):
         event.ignore()
         # 调用退出应用程序方法，显示过渡页面并启动全屏浏览器
         self.exit_application()
+    
+    def cleanup_json_files(self):
+        """清理JSON文件"""
+        try:
+            json_files = [
+                'received_data.json',
+                'received_tasks.json'
+            ]
+            
+            deleted_files = []
+            for file_path in json_files:
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                        deleted_files.append(file_path)
+                        print(f"✅ 已删除JSON文件: {file_path}")
+                    except Exception as e:
+                        print(f"❌ 删除文件 {file_path} 失败: {str(e)}")
+            
+            # 清理备份文件（.notified_* 结尾的文件）
+            current_dir = os.getcwd()
+            for filename in os.listdir(current_dir):
+                if filename.startswith('received_tasks.json.notified_'):
+                    try:
+                        backup_path = os.path.join(current_dir, filename)
+                        os.remove(backup_path)
+                        deleted_files.append(filename)
+                        print(f"✅ 已删除备份文件: {filename}")
+                    except Exception as e:
+                        print(f"❌ 删除备份文件 {filename} 失败: {str(e)}")
+            
+            if deleted_files:
+                print(f"🧹 JSON文件清理完成，共删除 {len(deleted_files)} 个文件")
+            else:
+                print("🧹 没有找到需要清理的JSON文件")
+                
+        except Exception as e:
+            print(f"❌ 清理JSON文件时出错: {str(e)}")
     
     def check_and_notify_tasks(self):
         """检查是否有待处理的任务并弹出通知 - 与提交任务获取方式保持一致"""

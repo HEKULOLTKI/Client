@@ -4,9 +4,77 @@
 import sys
 import os
 import subprocess
+import json
+import threading
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 from transition_screen import TransitionScreen
+
+def cleanup_json_files():
+    """清理JSON文件"""
+    try:
+        json_files = [
+            'received_data.json',
+            'received_tasks.json'
+        ]
+        
+        deleted_files = []
+        for file_path in json_files:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    deleted_files.append(file_path)
+                    print(f"✅ 已删除JSON文件: {file_path}")
+                except Exception as e:
+                    print(f"❌ 删除文件 {file_path} 失败: {str(e)}")
+        
+        # 清理备份文件（.notified_* 结尾的文件）
+        current_dir = os.getcwd()
+        for filename in os.listdir(current_dir):
+            if filename.startswith('received_tasks.json.notified_'):
+                try:
+                    backup_path = os.path.join(current_dir, filename)
+                    os.remove(backup_path)
+                    deleted_files.append(filename)
+                    print(f"✅ 已删除备份文件: {filename}")
+                except Exception as e:
+                    print(f"❌ 删除备份文件 {filename} 失败: {str(e)}")
+        
+        if deleted_files:
+            print(f"🧹 JSON文件清理完成，共删除 {len(deleted_files)} 个文件")
+        else:
+            print("🧹 没有找到需要清理的JSON文件")
+            
+    except Exception as e:
+        print(f"❌ 清理JSON文件时出错: {str(e)}")
+
+def monitor_process_and_cleanup(process):
+    """监控进程并在结束时清理JSON文件"""
+    try:
+        print(f"🔍 开始监控desktop_manager进程 (PID: {process.pid})...")
+        
+        # 等待进程结束
+        return_code = process.wait()
+        print(f"🔔 检测到desktop_manager进程已结束，返回代码: {return_code}")
+        
+        # 清理JSON文件
+        cleanup_json_files()
+        
+    except Exception as e:
+        print(f"❌ 监控进程时出错: {str(e)}")
+
+def start_cleanup_monitor(process):
+    """启动独立线程来监控进程并清理文件"""
+    try:
+        monitor_thread = threading.Thread(
+            target=monitor_process_and_cleanup, 
+            args=(process,), 
+            daemon=True
+        )
+        monitor_thread.start()
+        print("🔍 已启动独立线程监控desktop_manager进程")
+    except Exception as e:
+        print(f"❌ 启动进程监控线程失败: {str(e)}")
 
 def start_desktop_manager():
     """启动desktop_manager程序"""
@@ -69,6 +137,10 @@ def start_desktop_manager():
                 ])
         
         print(f"desktop_manager 已启动，进程ID: {process.pid}")
+        
+        # 启动独立的进程监控来清理JSON文件
+        start_cleanup_monitor(process)
+        
         return True
         
     except FileNotFoundError:

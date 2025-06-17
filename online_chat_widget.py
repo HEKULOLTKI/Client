@@ -328,6 +328,7 @@ class OnlineChatWidget(QWidget):
         self.current_user = "当前用户"  # 默认用户名，可以通过方法设置
         self.api = OnlineChatAPI()
         self.heartbeat_timer = QTimer()
+        self.offline_mode = False  # 离线模式标志
         
         # 设置窗口属性
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
@@ -336,14 +337,13 @@ class OnlineChatWidget(QWidget):
         # 初始化UI
         self.setup_ui()
         self.setup_connections()
-        self.setup_heartbeat()
         
         # 初始化拖动变量
         self._is_drag = False
         self._drag_pos = None
         
-        # 加载消息和在线用户
-        self.load_initial_data()
+        # 检查服务器连接，如果失败则进入离线模式
+        self.check_server_connection()
         
     def setup_ui(self):
         """设置用户界面"""
@@ -670,8 +670,95 @@ class OnlineChatWidget(QWidget):
         
     def setup_heartbeat(self):
         """设置心跳定时器"""
-        self.heartbeat_timer.timeout.connect(self.send_heartbeat)
-        self.heartbeat_timer.start(30000)  # 每30秒发送一次心跳
+        if not self.offline_mode:
+            self.heartbeat_timer.timeout.connect(self.send_heartbeat)
+            self.heartbeat_timer.start(30000)
+    
+    def check_server_connection(self):
+        """检查服务器连接"""
+        try:
+            # 尝试简单的连接测试
+            response = requests.get(f"{self.api.base_url}/api/status", timeout=3)
+            if response.status_code == 200:
+                self.offline_mode = False
+                self.status_label.setText("正在连接...")
+                self.setup_heartbeat()
+                self.load_initial_data()
+            else:
+                self.enter_offline_mode()
+        except Exception as e:
+            print(f"服务器连接失败: {str(e)}")
+            self.enter_offline_mode()
+    
+    def enter_offline_mode(self):
+        """进入离线模式"""
+        self.offline_mode = True
+        self.status_label.setText("离线模式")
+        self.online_count_label.setText("离线: 0")
+        self.online_count_label.setStyleSheet("""
+            QLabel {
+                color: #e74c3c;
+                background-color: #fdeaea;
+                padding: 5px 10px;
+                border-radius: 15px;
+            }
+        """)
+        
+        # 添加离线模式说明
+        self.add_message(
+            "当前处于离线模式，无法连接到聊天服务器。\n您可以在此测试界面功能，但无法发送真实消息。", 
+            is_user=False, 
+            sender_name="系统", 
+            timestamp="--:--"
+        )
+        
+        # 添加一些示例用户和消息
+        self.load_offline_demo_data()
+    
+    def load_offline_demo_data(self):
+        """加载离线演示数据"""
+        # 添加示例消息
+        demo_messages = [
+            {"content": "欢迎使用在线聊天室！", "sender": "系统", "time": "09:00"},
+            {"content": "大家好！", "sender": "张三", "time": "09:15"},
+            {"content": "有人在吗？", "sender": "李四", "time": "09:30"},
+        ]
+        
+        for msg in demo_messages:
+            self.add_message(
+                msg["content"],
+                is_user=False,
+                sender_name=msg["sender"],
+                timestamp=msg["time"]
+            )
+        
+        # 添加示例在线用户
+        demo_users = [
+            {"username": "张三", "user_id": 1},
+            {"username": "李四", "user_id": 2},
+            {"username": "王五", "user_id": 3},
+            {"username": self.current_user, "user_id": 4}
+        ]
+        
+        for user in demo_users:
+            self.add_online_user(user)
+        
+        self.online_count_label.setText(f"演示: {len(demo_users)}")
+    
+    def load_initial_data(self):
+        """加载初始数据"""
+        if self.offline_mode:
+            self.load_offline_demo_data()
+            return
+            
+        self.loading_indicator.show()
+        self.status_label.setText("正在加载...")
+        
+        # 加载消息历史
+        self.api.load_messages()
+        
+        # 加载在线用户
+        self.api.load_online_users()  # 每30秒发送一次心跳
         
     def set_user_info(self, username, token=None):
         """设置用户信息"""
@@ -712,7 +799,25 @@ class OnlineChatWidget(QWidget):
         text = self.input.text().strip()
         if not text:
             return
+        
+        # 清空输入框
+        self.input.clear()
+        
+        if self.offline_mode:
+            # 离线模式下模拟发送
+            timestamp = datetime.now().strftime("%H:%M")
+            self.add_message(text, is_user=True, sender_name=self.current_user, timestamp=timestamp)
             
+            # 模拟系统回复
+            QTimer.singleShot(1000, lambda: self.add_message(
+                "这是离线模式的模拟回复。实际聊天需要连接到服务器。",
+                is_user=False,
+                sender_name="系统",
+                timestamp=datetime.now().strftime("%H:%M")
+            ))
+            return
+            
+        # 在线模式
         # 显示发送状态
         self.input.setEnabled(False)
         self.send_btn.setEnabled(False)
@@ -720,9 +825,6 @@ class OnlineChatWidget(QWidget):
         
         # 发送消息
         self.api.send_message(text)
-        
-        # 清空输入框
-        self.input.clear()
         
     def upload_file(self):
         """上传文件"""

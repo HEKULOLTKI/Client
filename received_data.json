@@ -2,18 +2,18 @@
   "action": "user_data_sync",
   "sync_info": {
     "sync_type": "current_user_export",
-    "sync_time": "2025-06-17T01:08:46.299344Z",
+    "sync_time": "2025-06-17T08:42:17.457099Z",
     "operator": {
-      "user_id": 24,
-      "username": "user2",
-      "operator_role": "系统架构师",
+      "user_id": 23,
+      "username": "user1",
+      "operator_role": "网络规划设计师",
       "operator_type": "操作员",
-      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMiIsImV4cCI6MTc1MDA5NTUyMn0.iLnkE1b3lPSbUhrl3khs3hulxZ3T55bw5o2TcclXauQ"
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1MDEyMjczNH0.FkRm1BFBhyuS0WzX-XDDNoSsl6yhOVwkdzHkVflGHFU"
     },
     "session": {
       "ip_address": "127.0.0.1",
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) QtWebEngine/5.15.2 Chrome/83.0.4103.122 Safari/537.36",
-      "login_time": 1750093722.0746439
+      "login_time": 1750120934.6502922
     },
     "data_source": {
       "database": "user_management",
@@ -24,24 +24,24 @@
   },
   "users": [
     {
-      "id": 24,
-      "username": "user2",
+      "id": 23,
+      "username": "user1",
       "password": "123456",
-      "password_hash": "$2b$12$1pqJrbHqeQJx2oFLmZ/fbu.OAcuYVBl2f9ez/KGnfv/Yh/NVYcVJ6",
-      "role": "系统架构师",
+      "password_hash": "$2b$12$Kjbbit2SRKcUrSMKeHKRsuiSsnHGehiAXMfHYWZiGKHY81phz1EIi",
+      "role": "网络规划设计师",
       "type": "操作员",
       "status": "active",
       "photo_data": null,
       "created_at": "2025-06-16T14:05:19",
       "updated_at": "2025-06-16T14:05:19",
-      "last_login": 1750093722.0746439,
+      "last_login": 1750120934.6502922,
       "login_count": 2,
       "is_locked": false,
       "lock_reason": null,
-      "email": "user2@company.com",
+      "email": "user1@company.com",
       "phone": null,
       "department": "运维部",
-      "position": "系统架构师"
+      "position": "网络规划设计师"
     }
   ],
   "sync_summary": {
@@ -49,12 +49,12 @@
     "active_users": 1,
     "inactive_users": 0,
     "roles": [
-      "系统架构师"
+      "网络规划设计师"
     ],
     "types": [
       "操作员"
     ],
-    "sync_id": "sync_1750093726299",
+    "sync_id": "sync_1750120937457",
     "checksum": null,
     "data_size": null,
     "compression": "none"
