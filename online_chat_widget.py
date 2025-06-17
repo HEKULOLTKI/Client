@@ -5,13 +5,15 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLineEdit, QPushButton,
                            QDialog, QDialogButtonBox)
 from PyQt5.QtCore import Qt, QPoint, QSize, QTimer, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal, QUrl
 from PyQt5.QtGui import (QFont, QIcon, QPixmap, QPainter, QColor, QPainterPath, 
-                        QPen, QFontMetrics, QDesktopServices, QCursor)
+                        QPen, QFontMetrics, QDesktopServices, QCursor, QBrush)
 import requests
 import time
 import json
 import os
 import subprocess
 import webbrowser
+import platform
+import mimetypes
 from datetime import datetime
 import online_chat_config as config
 from token_manager import TokenManager
@@ -37,13 +39,17 @@ class OnlineLoadingIndicator(QProgressBar):
 
 class OnlineChatBubble(QFrame):
     """在线聊天气泡组件"""
-    def __init__(self, text, is_user=True, sender_name="", timestamp="", profession="", parent=None):
+    def __init__(self, text, is_user=True, sender_name="", timestamp="", profession="", message_type="text", parent=None):
         super().__init__(parent)
         self.is_user = is_user
         self.text = text
         self.sender_name = sender_name
         self.timestamp = timestamp
         self.profession = profession
+        self.message_type = message_type
+        
+        # 判断是否为系统消息
+        self.is_system_message = (message_type == "system" or sender_name == "系统")
         
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         
@@ -59,8 +65,8 @@ class OnlineChatBubble(QFrame):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
         
-        # 消息信息栏（发送者和时间）
-        if not is_user:
+        # 消息信息栏（发送者和时间）- 系统消息不显示发送者信息
+        if not is_user and not self.is_system_message:
             info_layout = QHBoxLayout()
             info_layout.setContentsMargins(50, 0, 0, 0)
             
@@ -86,42 +92,78 @@ class OnlineChatBubble(QFrame):
         # 创建消息容器
         msg_container = QFrame()
         msg_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        msg_container.setStyleSheet(f"""
-            QFrame {{
-                background-color: {'#2ecc71' if is_user else '#F0F2F5'};
-                border-radius: 18px;
-            }}
-        """)
+        
+        # 系统消息使用特殊样式
+        if self.is_system_message:
+            msg_container.setStyleSheet("""
+                QFrame {
+                    background-color: #fff3cd;
+                    border: 1px solid #ffeaa7;
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            msg_container.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {'#2ecc71' if is_user else '#F0F2F5'};
+                    border-radius: 18px;
+                }}
+            """)
         
         container_layout = QHBoxLayout(msg_container)
         container_layout.setContentsMargins(15, 10, 15, 10)
         container_layout.setSpacing(0)
         
-        # 创建头像
-        avatar = QLabel()
-        avatar.setFixedSize(40, 40)
-        if is_user:
-            # 当前用户头像：优先根据职业选择，默认使用系统架构师
-            if self.profession:
-                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+        # 创建头像 - 系统消息不显示头像
+        avatar = None
+        if not self.is_system_message:
+            avatar = QLabel()
+            avatar.setFixedSize(40, 40)
+            if is_user:
+                # 当前用户头像：优先根据职业选择，默认使用系统架构师
+                if self.profession:
+                    avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+                else:
+                    avatar_pixmap = QPixmap(config.get_avatar_path('user'))
             else:
-                avatar_pixmap = QPixmap(config.get_avatar_path('user'))
-        else:
-            # 其他用户头像：优先根据职业选择，默认使用网络规划设计师
-            if self.profession:
-                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
-            else:
-                avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
-        
-        avatar.setPixmap(avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        avatar.setStyleSheet("""
-            QLabel {
-                border-radius: 20px;
-                background-color: white;
-                padding: 2px;
-                border: 2px solid #E8E8E8;
-            }
-        """)
+                # 其他用户头像：优先根据职业选择，默认使用网络规划设计师
+                if self.profession:
+                    avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+                else:
+                    avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+            
+            # 创建圆形遮罩
+            mask = QPixmap(40, 40)
+            mask.fill(Qt.transparent)
+            
+            painter = QPainter(mask)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setBrush(QBrush(Qt.black))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(0, 0, 40, 40)
+            painter.end()
+            
+            # 缩放头像并应用圆形遮罩
+            scaled_pixmap = avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            
+            # 如果图片不是正方形，裁剪到中心
+            if scaled_pixmap.width() != scaled_pixmap.height():
+                size = min(scaled_pixmap.width(), scaled_pixmap.height())
+                x = (scaled_pixmap.width() - size) // 2
+                y = (scaled_pixmap.height() - size) // 2
+                scaled_pixmap = scaled_pixmap.copy(x, y, size, size).scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            
+            # 应用圆形遮罩
+            scaled_pixmap.setMask(mask.createMaskFromColor(Qt.transparent, Qt.MaskInColor))
+            
+            avatar.setPixmap(scaled_pixmap)
+            avatar.setStyleSheet("""
+                QLabel {
+                    border-radius: 20px;
+                    background-color: white;
+                    border: 2px solid #E8E8E8;
+                }
+            """)
         
         # 创建文本容器
         text_container = QFrame()
@@ -158,21 +200,37 @@ class OnlineChatBubble(QFrame):
         text_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         
         # 设置文本样式和对齐方式
-        text_label.setStyleSheet(f"""
-            QLabel {{
-                color: {'white' if is_user else '#1C1C1C'};
-                background: transparent;
-                padding: 5px;
-                qproperty-alignment: AlignLeft;
-            }}
-        """)
+        if self.is_system_message:
+            # 系统消息使用特殊样式
+            text_label.setStyleSheet("""
+                QLabel {
+                    color: #856404;
+                    background: transparent;
+                    padding: 5px;
+                    qproperty-alignment: AlignCenter;
+                }
+            """)
+        else:
+            text_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {'white' if is_user else '#1C1C1C'};
+                    background: transparent;
+                    padding: 5px;
+                    qproperty-alignment: AlignLeft;
+                }}
+            """)
         
         # 文本容器布局
         text_layout = QHBoxLayout(text_container)
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(0)
         
-        if is_user:
+        if self.is_system_message:
+            # 系统消息居中显示
+            text_layout.addStretch(1)
+            text_layout.addWidget(text_label)
+            text_layout.addStretch(1)
+        elif is_user:
             # 用户消息：文本左对齐，整体靠右
             text_layout.addWidget(text_label)
         else:
@@ -184,17 +242,24 @@ class OnlineChatBubble(QFrame):
         container_layout.addWidget(text_container)
         
         # 设置最终布局
-        if is_user:
+        if self.is_system_message:
+            # 系统消息居中显示，不显示头像
+            msg_layout.addStretch(1)
+            msg_layout.addWidget(msg_container)
+            msg_layout.addStretch(1)
+        elif is_user:
             msg_layout.addStretch(1)  # 左侧弹性空间
             msg_layout.addWidget(msg_container)  # 消息气泡
-            msg_layout.addWidget(avatar)  # 头像靠右
+            if avatar:
+                msg_layout.addWidget(avatar)  # 头像靠右
         else:
-            msg_layout.addWidget(avatar)  # 头像靠左
+            if avatar:
+                msg_layout.addWidget(avatar)  # 头像靠左
             msg_layout.addWidget(msg_container)  # 消息气泡
             msg_layout.addStretch(1)  # 右侧弹性空间
         
-        # 用户消息显示时间在右侧
-        if is_user and timestamp:
+        # 用户消息显示时间在右侧，系统消息显示时间居中
+        if is_user and timestamp and not self.is_system_message:
             time_layout = QHBoxLayout()
             time_layout.setContentsMargins(0, 0, 50, 0)
             time_layout.addStretch()
@@ -203,6 +268,20 @@ class OnlineChatBubble(QFrame):
             time_label.setFont(QFont("Microsoft YaHei UI", 8))
             time_label.setStyleSheet("color: #999999;")
             time_layout.addWidget(time_label)
+            
+            layout.addLayout(msg_layout)
+            layout.addLayout(time_layout)
+        elif self.is_system_message and timestamp:
+            # 系统消息时间居中显示
+            time_layout = QHBoxLayout()
+            time_layout.setContentsMargins(0, 5, 0, 0)
+            time_layout.addStretch()
+            
+            time_label = QLabel(timestamp)
+            time_label.setFont(QFont("Microsoft YaHei UI", 8))
+            time_label.setStyleSheet("color: #856404;")
+            time_layout.addWidget(time_label)
+            time_layout.addStretch()
             
             layout.addLayout(msg_layout)
             layout.addLayout(time_layout)
@@ -463,33 +542,50 @@ class FileChatBubble(QFrame):
         return f"{size_bytes:.1f} {size_names[i]}"
     
     def download_file(self):
-        """下载文件"""
+        """下载文件 - 直接下载到本地"""
         if not self.file_url:
+            from PyQt5.QtWidgets import QMessageBox
             QMessageBox.warning(self, "下载失败", "文件URL不存在")
             return
         
         try:
+            print(f"📥 准备下载文件: {self.file_name}")
+            print(f"🔗 文件URL: {self.file_url}")
+            
+            # 查找父窗口中的OnlineChatWidget
+            parent_widget = self.parent()
+            while parent_widget:
+                if hasattr(parent_widget, 'download_file_from_chat'):
+                    # 找到了OnlineChatWidget，调用其下载方法
+                    parent_widget.download_file_from_chat(self.file_url, self.file_name)
+                    return
+                parent_widget = parent_widget.parent()
+            
+            # 如果找不到父窗口的下载方法，则回退到浏览器下载
+            print("⚠️ 未找到父窗口下载方法，回退到浏览器下载")
+            
             # 构建完整的文件URL
-            base_url = config.CHAT_API_BASE_URL
+            from online_chat_config import CHAT_API_BASE_URL
             if self.file_url.startswith('http'):
                 full_url = self.file_url
             else:
-                full_url = f"{base_url}{self.file_url}"
+                full_url = f"{CHAT_API_BASE_URL}{self.file_url}"
             
-            print(f"📥 开始下载文件: {self.file_name}")
-            print(f"🔗 文件URL: {full_url}")
-            
-            # 方式1：使用浏览器下载（推荐，因为可以利用浏览器的下载管理器）
+            # 使用浏览器打开
+            from PyQt5.QtCore import QUrl
+            from PyQt5.QtGui import QDesktopServices
             QDesktopServices.openUrl(QUrl(full_url))
             
-            # 显示下载提示
-            QMessageBox.information(self, "下载开始", 
+            # 显示提示
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(self, "文件已打开", 
                                   f"文件 {self.file_name} 已在浏览器中打开\n"
                                   f"如果是图片或PDF，将在浏览器中预览\n"
                                   f"其他文件类型将自动下载")
             
         except Exception as e:
             print(f"❌ 文件下载失败: {str(e)}")
+            from PyQt5.QtWidgets import QMessageBox
             QMessageBox.critical(self, "下载失败", f"文件下载失败：{str(e)}")
     
     def mousePressEvent(self, event):
@@ -811,7 +907,6 @@ class OnlineChatAPI(QThread):
             ]
             
             # 根据文件扩展名判断MIME类型
-            import mimetypes
             content_type, _ = mimetypes.guess_type(file_path)
             if content_type not in allowed_types:
                 # 特殊处理一些常见类型
@@ -950,6 +1045,86 @@ class OnlineChatAPI(QThread):
         except Exception as e:
             print(f"获取聊天统计失败: {str(e)}")
             return None
+    
+    def download_file_direct(self, file_url, file_name, save_path=None):
+        """直接下载文件到本地"""
+        try:
+            # 构建完整的文件URL
+            if file_url.startswith('http'):
+                full_url = file_url
+            else:
+                full_url = f"{self.base_url}{file_url}"
+            
+            print(f"📥 开始下载文件: {file_name}")
+            print(f"🔗 文件URL: {full_url}")
+            
+            # 如果没有指定保存路径，使用默认下载目录
+            if not save_path:
+                # 获取用户的下载目录
+                downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+                if not os.path.exists(downloads_dir):
+                    downloads_dir = os.path.expanduser("~")  # 如果下载目录不存在，使用用户主目录
+                save_path = os.path.join(downloads_dir, file_name)
+            
+            # 如果文件已存在，添加数字后缀
+            base_path = save_path
+            counter = 1
+            while os.path.exists(save_path):
+                name, ext = os.path.splitext(base_path)
+                save_path = f"{name}({counter}){ext}"
+                counter += 1
+            
+            # 下载文件
+            headers = {}
+            if self.token:
+                headers['Authorization'] = f'Bearer {self.token}'
+            
+            response = requests.get(full_url, headers=headers, 
+                                  timeout=config.CHAT_API_TIMEOUT * 3,  # 下载需要更长时间
+                                  stream=True)  # 流式下载，支持大文件
+            response.raise_for_status()
+            
+            # 获取文件大小
+            total_size = int(response.headers.get('content-length', 0))
+            
+            # 写入文件
+            with open(save_path, 'wb') as f:
+                downloaded_size = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        
+                        # 打印下载进度
+                        if total_size > 0:
+                            progress = (downloaded_size / total_size) * 100
+                            print(f"📥 下载进度: {progress:.1f}% ({downloaded_size}/{total_size} 字节)")
+            
+            print(f"✅ 文件下载成功: {save_path}")
+            return save_path
+            
+        except requests.exceptions.Timeout:
+            print(f"❌ 文件下载超时: {file_name}")
+            raise Exception("下载超时，请检查网络连接")
+        except requests.exceptions.ConnectionError:
+            print(f"❌ 网络连接错误: {file_name}")
+            raise Exception("网络连接失败，请检查网络设置")
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                print(f"❌ 文件不存在: {file_name}")
+                raise Exception("文件不存在或已被删除")
+            elif e.response.status_code == 403:
+                print(f"❌ 无权限访问文件: {file_name}")
+                raise Exception("无权限访问此文件")
+            else:
+                print(f"❌ HTTP错误 {e.response.status_code}: {file_name}")
+                raise Exception(f"下载失败: HTTP {e.response.status_code}")
+        except OSError as e:
+            print(f"❌ 文件写入错误: {str(e)}")
+            raise Exception(f"文件保存失败: {str(e)}")
+        except Exception as e:
+            print(f"❌ 文件下载失败: {str(e)}")
+            raise Exception(f"下载失败: {str(e)}")
 
 class OnlineChatWidget(QWidget):
     """在线聊天窗口组件"""
@@ -1444,7 +1619,7 @@ class OnlineChatWidget(QWidget):
         if message_type == "file" and file_info:
             bubble = FileChatBubble(file_info, is_user, sender_name, timestamp, profession)
         else:
-            bubble = OnlineChatBubble(content, is_user, sender_name, timestamp, profession)
+            bubble = OnlineChatBubble(content, is_user, sender_name, timestamp, profession, message_type)
             
         self.chat_layout.addWidget(bubble)
         
@@ -1658,7 +1833,7 @@ class OnlineChatWidget(QWidget):
             QFrame {
                 background-color: white;
                 border-radius: 8px;
-                padding: 5px;
+                padding: 8px 12px;
                 margin: 2px;
             }
             QFrame:hover {
@@ -1667,47 +1842,26 @@ class OnlineChatWidget(QWidget):
         """)
         
         user_layout = QHBoxLayout(user_frame)
-        user_layout.setContentsMargins(8, 5, 8, 5)
-        user_layout.setSpacing(8)
+        user_layout.setContentsMargins(8, 8, 8, 8)
+        user_layout.setSpacing(0)
         
-        # 用户头像 - 根据职业信息选择
-        avatar = QLabel()
-        avatar.setFixedSize(30, 30)
-        
-        # 获取用户职业信息
-        profession = user_info.get('profession', '')
-        if profession:
-            avatar_pixmap = QPixmap(config.get_avatar_by_profession(profession))
-        else:
-            avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
-        
-        avatar.setPixmap(avatar_pixmap.scaled(30, 30, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        avatar.setStyleSheet("""
-            QLabel {
-                border-radius: 15px;
-                background-color: #f8f9fa;
-                border: 1px solid #E8E8E8;
-            }
-        """)
-        
-        # 用户信息
+        # 用户信息（不显示头像）
         user_info_layout = QVBoxLayout()
-        user_info_layout.setSpacing(2)
+        user_info_layout.setSpacing(3)
         
         username = user_info.get('username', '未知用户')
         user_label = QLabel(username)
-        user_label.setFont(QFont("Microsoft YaHei UI", 9, QFont.Bold))
+        user_label.setFont(QFont("Microsoft YaHei UI", 10, QFont.Bold))
         user_label.setStyleSheet("color: #1C1C1C;")
         
         status_text = "在线"
         status_label = QLabel(status_text)
         status_label.setFont(QFont("Microsoft YaHei UI", 8))
-        status_label.setStyleSheet("color: #2ecc71;")
+        status_label.setStyleSheet("color: #2ecc71; font-weight: normal;")
         
         user_info_layout.addWidget(user_label)
         user_info_layout.addWidget(status_label)
         
-        user_layout.addWidget(avatar)
         user_layout.addLayout(user_info_layout)
         user_layout.addStretch()
         
@@ -1760,7 +1914,7 @@ class OnlineChatWidget(QWidget):
         if message_type == "file" and file_info:
             bubble = FileChatBubble(file_info, True, sender_name, formatted_time, current_user_profession)
         else:
-            bubble = OnlineChatBubble(content, True, sender_name, formatted_time, current_user_profession)
+            bubble = OnlineChatBubble(content, True, sender_name, formatted_time, current_user_profession, message_type)
         
         # 设置消息ID和其他属性用于去重和管理
         if message_id:
@@ -1859,7 +2013,7 @@ class OnlineChatWidget(QWidget):
             if message_type == "file" and file_info:
                 bubble = FileChatBubble(file_info, is_user, sender_name, formatted_time, sender_profession)
             else:
-                bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time, sender_profession)
+                bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time, sender_profession, message_type)
                 
             # 设置消息ID和其他属性用于去重和管理
             if message_id:
@@ -2017,3 +2171,89 @@ class OnlineChatWidget(QWidget):
         if self.auto_refresh_timer.isActive():
             self.auto_refresh_timer.stop()
         event.accept() 
+
+    def download_file_from_chat(self, file_url, file_name):
+        """从聊天框下载文件 - 直接下载到本地"""
+        try:
+            # 显示下载开始提示
+            self.add_message(
+                f"开始下载文件: {file_name}...", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
+            
+            # 让用户选择保存位置
+            from PyQt5.QtWidgets import QFileDialog
+            
+            # 获取文件扩展名
+            _, ext = os.path.splitext(file_name)
+            
+            # 构建文件过滤器
+            if ext:
+                filter_text = f"{ext.upper()[1:]} 文件 (*{ext});;所有文件 (*.*)"
+            else:
+                filter_text = "所有文件 (*.*)"
+            
+            # 弹出保存对话框
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                "保存文件", 
+                file_name,  # 默认文件名
+                filter_text
+            )
+            
+            if not save_path:
+                # 用户取消了保存
+                self.add_message(
+                    "文件下载已取消", 
+                    is_user=False, 
+                    sender_name="系统", 
+                    timestamp=datetime.now().strftime("%H:%M")
+                )
+                return
+            
+            # 使用API下载文件
+            downloaded_path = self.api.download_file_direct(file_url, file_name, save_path)
+            
+            # 显示下载成功提示
+            self.add_message(
+                f"文件下载成功: {os.path.basename(downloaded_path)}\n保存位置: {downloaded_path}", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
+            
+            # 询问是否打开文件所在文件夹
+            from PyQt5.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self, 
+                "下载完成", 
+                f"文件已成功下载到:\n{downloaded_path}\n\n是否打开文件所在文件夹？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 打开文件所在文件夹
+                folder_path = os.path.dirname(downloaded_path)
+                
+                if platform.system() == "Windows":
+                    # Windows: 使用explorer打开并选中文件
+                    subprocess.run(f'explorer /select,"{downloaded_path}"', shell=True)
+                elif platform.system() == "Darwin":  # macOS
+                    subprocess.run(["open", "-R", downloaded_path])
+                else:  # Linux
+                    subprocess.run(["xdg-open", folder_path])
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"❌ 文件下载失败: {error_msg}")
+            
+            # 显示下载失败提示
+            self.add_message(
+                f"文件下载失败: {error_msg}", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
