@@ -630,49 +630,144 @@ class OnlineChatAPI(QThread):
         return headers
     
     def send_message(self, content, message_type="text", reply_to=None, file_info=None):
-        """发送消息"""
+        """发送消息 - 根据分析报告优化"""
         try:
             url = f"{self.base_url}/api/chat/send"
             params = {"room_id": self.room_id}
+            
+            # 根据分析报告构建完整的消息数据结构
             data = {
                 "message_type": message_type,
                 "content": content
             }
+            
+            # 添加回复消息ID（如果存在）
             if reply_to:
                 data["reply_to"] = reply_to
+            
+            # 文件信息处理（用于文件消息）
             if file_info:
-                data["file_info"] = file_info
+                # 文件信息应该通过上传接口处理，这里只传递文件相关的内容
+                if message_type in ["file", "image"]:
+                    data["content"] = f"发送了文件: {file_info.get('file_name', '未知文件')}"
+                
+            print(f"发送消息请求: URL={url}, 参数={params}, 数据={data}")
                 
             response = requests.post(url, json=data, headers=self.get_headers(), 
                                    params=params, timeout=config.CHAT_API_TIMEOUT)
             response.raise_for_status()
             
             message_data = response.json()
+            
+            # 验证响应数据结构（根据分析报告的ChatMessage模型）
+            required_fields = ['id', 'sender_id', 'sender_name', 'content', 'timestamp']
+            for field in required_fields:
+                if field not in message_data:
+                    print(f"警告: 响应缺少必需字段 '{field}'")
+            
+            print(f"消息发送成功: ID={message_data.get('id', 'N/A')}")
             self.message_received.emit(message_data)
             
+        except requests.exceptions.Timeout:
+            self.error_occurred.emit("发送消息超时，请检查网络连接")
+        except requests.exceptions.ConnectionError:
+            self.error_occurred.emit("无法连接到服务器，请检查网络设置")
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                self.error_occurred.emit("认证失败，请重新登录")
+            elif e.response.status_code == 403:
+                self.error_occurred.emit("权限不足，无法发送消息")
+            elif e.response.status_code == 413:
+                self.error_occurred.emit("消息内容过大，请减少内容长度")
+            else:
+                self.error_occurred.emit(f"发送消息失败: HTTP {e.response.status_code}")
         except Exception as e:
             self.error_occurred.emit(f"发送消息失败: {str(e)}")
     
     def load_messages(self, limit=50, before=None):
-        """加载消息历史"""
+        """加载消息历史 - 根据分析报告优化"""
         try:
             url = f"{self.base_url}/api/chat/messages"
+            
+            # 根据分析报告优化参数构建
             params = {
                 "room_id": self.room_id,
-                "limit": limit
+                "limit": min(limit, 100)  # 限制单次加载量，避免过载
             }
+            
+            # 分页支持（基于消息ID）
             if before:
                 params["before"] = before
+                
+            print(f"加载消息请求: URL={url}, 参数={params}")
                 
             response = requests.get(url, headers=self.get_headers(), 
                                   params=params, timeout=config.CHAT_API_TIMEOUT)
             response.raise_for_status()
             
             messages = response.json()
-            self.messages_loaded.emit(messages)
             
+            # 验证消息数据结构
+            if not isinstance(messages, list):
+                print("警告: 服务器返回的不是消息列表格式")
+                messages = []
+            
+            # 验证每条消息的数据完整性
+            valid_messages = []
+            for msg in messages:
+                if self._validate_message_structure(msg):
+                    valid_messages.append(msg)
+                else:
+                    print(f"跳过无效消息: {msg}")
+            
+            print(f"成功加载 {len(valid_messages)} 条消息")
+            self.messages_loaded.emit(valid_messages)
+            
+        except requests.exceptions.Timeout:
+            self.error_occurred.emit("加载消息超时，请检查网络连接")
+        except requests.exceptions.ConnectionError:
+            self.error_occurred.emit("无法连接到服务器，请检查网络设置")
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                self.error_occurred.emit("认证失败，请重新登录")
+            elif e.response.status_code == 403:
+                self.error_occurred.emit("权限不足，无法获取消息")
+            else:
+                self.error_occurred.emit(f"加载消息失败: HTTP {e.response.status_code}")
         except Exception as e:
             self.error_occurred.emit(f"加载消息失败: {str(e)}")
+    
+    def _validate_message_structure(self, message):
+        """验证消息数据结构完整性 - 根据分析报告的ChatMessage模型"""
+        if not isinstance(message, dict):
+            return False
+        
+        # 根据分析报告的必需字段
+        required_fields = ['id', 'sender_id', 'sender_name', 'content', 'timestamp']
+        for field in required_fields:
+            if field not in message:
+                print(f"消息缺少必需字段: {field}")
+                return False
+        
+        # 验证消息类型
+        message_type = message.get('message_type', 'text')
+        valid_types = ['text', 'file', 'image', 'system']
+        if message_type not in valid_types:
+            print(f"无效的消息类型: {message_type}")
+            return False
+        
+        # 验证时间戳格式
+        timestamp = message.get('timestamp')
+        if timestamp:
+            try:
+                from datetime import datetime
+                # 尝试解析ISO格式时间戳
+                datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            except Exception:
+                print(f"无效的时间戳格式: {timestamp}")
+                return False
+        
+        return True
     
     def load_online_users(self):
         """加载在线用户列表"""
@@ -687,6 +782,113 @@ class OnlineChatAPI(QThread):
         except Exception as e:
             self.error_occurred.emit(f"加载在线用户失败: {str(e)}")
     
+    def upload_file_and_send(self, file_path, room_id="global"):
+        """上传文件并发送消息 - 根据分析报告实现"""
+        try:
+            url = f"{self.base_url}/api/chat/upload"
+            
+            # 检查文件是否存在
+            if not os.path.exists(file_path):
+                self.error_occurred.emit("文件不存在")
+                return
+            
+            # 检查文件大小
+            file_size = os.path.getsize(file_path)
+            max_size = 10 * 1024 * 1024  # 10MB 限制（按照分析报告）
+            if file_size > max_size:
+                self.error_occurred.emit(f"文件大小超过限制({max_size // (1024*1024)}MB)")
+                return
+            
+            # 获取文件信息
+            filename = os.path.basename(file_path)
+            
+            # 检查文件类型
+            allowed_types = [
+                'image/jpeg', 'image/png', 'image/gif', 'image/webp',  # 图片
+                'application/pdf', 'text/plain',  # 文档
+                'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # Word
+                'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'  # Excel
+            ]
+            
+            # 根据文件扩展名判断MIME类型
+            import mimetypes
+            content_type, _ = mimetypes.guess_type(file_path)
+            if content_type not in allowed_types:
+                # 特殊处理一些常见类型
+                ext = os.path.splitext(filename)[1].lower()
+                if ext in ['.jpg', '.jpeg']:
+                    content_type = 'image/jpeg'
+                elif ext == '.png':
+                    content_type = 'image/png'
+                elif ext == '.gif':
+                    content_type = 'image/gif'
+                elif ext == '.webp':
+                    content_type = 'image/webp'
+                elif ext == '.pdf':
+                    content_type = 'application/pdf'
+                elif ext == '.txt':
+                    content_type = 'text/plain'
+                elif ext in ['.doc', '.docx']:
+                    content_type = 'application/msword'
+                elif ext in ['.xls', '.xlsx']:
+                    content_type = 'application/vnd.ms-excel'
+                else:
+                    self.error_occurred.emit(f"不支持的文件类型: {ext}")
+                    return
+            
+            print(f"📤 开始上传文件: {filename}, 大小: {file_size}, 类型: {content_type}")
+            
+            # 准备multipart/form-data请求
+            headers = self.get_headers()
+            # 移除Content-Type，让requests自动设置multipart边界
+            if 'Content-Type' in headers:
+                del headers['Content-Type']
+            
+            with open(file_path, 'rb') as f:
+                files = {
+                    'file': (filename, f, content_type)
+                }
+                data = {
+                    'room_id': room_id
+                }
+                
+                response = requests.post(url, files=files, data=data, headers=headers, 
+                                       timeout=config.CHAT_API_TIMEOUT * 2)  # 文件上传需要更长时间
+            
+            response.raise_for_status()
+            
+            # 解析响应 - 应该返回ChatMessage格式
+            message_data = response.json()
+            
+            # 验证响应数据结构
+            if not self._validate_message_structure(message_data):
+                print("警告: 文件上传响应数据结构不完整")
+            
+            print(f"✅ 文件上传成功: {message_data.get('file_name', filename)}")
+            print(f"   文件URL: {message_data.get('file_url', 'N/A')}")
+            print(f"   消息ID: {message_data.get('id', 'N/A')}")
+            
+            # 发出消息接收信号
+            self.message_received.emit(message_data)
+            
+        except requests.exceptions.Timeout:
+            self.error_occurred.emit("文件上传超时，请检查网络连接或文件大小")
+        except requests.exceptions.ConnectionError:
+            self.error_occurred.emit("无法连接到服务器，请检查网络设置")
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 413:
+                self.error_occurred.emit("文件大小超过服务器限制(10MB)")
+            elif e.response.status_code == 415:
+                self.error_occurred.emit("不支持的文件类型")
+            elif e.response.status_code == 401:
+                self.error_occurred.emit("认证失败，请重新登录")
+            elif e.response.status_code == 403:
+                self.error_occurred.emit("权限不足，无法上传文件")
+            else:
+                self.error_occurred.emit(f"文件上传失败: HTTP {e.response.status_code}")
+        except Exception as e:
+            self.error_occurred.emit(f"文件上传失败: {str(e)}")
+    
     def send_heartbeat(self):
         """发送心跳保持在线状态"""
         try:
@@ -696,6 +898,58 @@ class OnlineChatAPI(QThread):
             
         except Exception as e:
             print(f"心跳发送失败: {str(e)}")
+    
+    def delete_message(self, message_id, room_id="global"):
+        """删除消息 - 根据分析报告实现软删除"""
+        try:
+            url = f"{self.base_url}/api/chat/messages/{message_id}"
+            params = {"room_id": room_id}
+            
+            print(f"🗑️ 删除消息请求: ID={message_id}, 房间={room_id}")
+            
+            response = requests.delete(url, headers=self.get_headers(), 
+                                     params=params, timeout=config.CHAT_API_TIMEOUT)
+            response.raise_for_status()
+            
+            result = response.json()
+            print(f"✅ 消息删除成功: {result}")
+            return True
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                print("❌ 消息删除失败: 只能删除自己的消息")
+                self.error_occurred.emit("只能删除自己的消息")
+            elif e.response.status_code == 404:
+                print("❌ 消息删除失败: 消息不存在")
+                self.error_occurred.emit("消息不存在或已被删除")
+            elif e.response.status_code == 401:
+                print("❌ 消息删除失败: 认证失败")
+                self.error_occurred.emit("认证失败，请重新登录")
+            else:
+                print(f"❌ 消息删除失败: HTTP {e.response.status_code}")
+                self.error_occurred.emit(f"删除消息失败: HTTP {e.response.status_code}")
+        except Exception as e:
+            print(f"❌ 消息删除失败: {str(e)}")
+            self.error_occurred.emit(f"删除消息失败: {str(e)}")
+        
+        return False
+    
+    def get_chat_stats(self):
+        """获取聊天统计信息 - 根据分析报告实现"""
+        try:
+            url = f"{self.base_url}/api/chat/stats"
+            
+            response = requests.get(url, headers=self.get_headers(), 
+                                  timeout=config.CHAT_API_TIMEOUT)
+            response.raise_for_status()
+            
+            stats = response.json()
+            print(f"📊 聊天统计: {stats}")
+            return stats
+            
+        except Exception as e:
+            print(f"获取聊天统计失败: {str(e)}")
+            return None
 
 class OnlineChatWidget(QWidget):
     """在线聊天窗口组件"""
@@ -1292,14 +1546,28 @@ class OnlineChatWidget(QWidget):
                 print(f"❌ 清理文件上传对话框时出错: {str(e)}")
     
     def on_file_uploaded(self, file_info):
-        """处理文件上传完成"""
-        # 发送文件消息
+        """处理文件上传完成 - 根据分析报告优化"""
+        # 获取文件路径
+        file_path = file_info.get('file_path', '')
         filename = file_info.get('filename', '未知文件')
         file_size = file_info.get('file_size', 0)
-        file_url = file_info.get('file_url', '')
         
-        # 构造文件消息内容
-        file_message = f"📎 {filename}\n大小: {config.format_file_size(file_size)}"
+        if not file_path or not os.path.exists(file_path):
+            self.add_message(
+                "文件路径无效，上传失败", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
+            return
+        
+        # 显示上传状态
+        self.add_message(
+            f"正在上传文件: {filename} ({config.format_file_size(file_size)})", 
+            is_user=False, 
+            sender_name="系统", 
+            timestamp=datetime.now().strftime("%H:%M")
+        )
         
         if self.connection_error:
             # 连接断开时提示错误
@@ -1310,9 +1578,10 @@ class OnlineChatWidget(QWidget):
                 timestamp=datetime.now().strftime("%H:%M")
             )
         else:
-            # 在线模式通过API发送文件消息
-            self.api.send_message(file_message, message_type="file", file_info=file_info)
-            
+            # 在线模式通过API上传文件
+            print(f"📤 通过API上传文件: {file_path}")
+            self.api.upload_file_and_send(file_path, self.api.room_id)
+    
     def refresh_chat(self):
         """刷新聊天"""
         self.loading_indicator.show()
@@ -1450,7 +1719,7 @@ class OnlineChatWidget(QWidget):
         
     # 信号处理方法
     def on_message_sent(self, message_data):
-        """消息发送成功处理"""
+        """消息发送成功处理 - 根据分析报告优化"""
         self.loading_indicator.hide()
         self.input.setEnabled(True)
         self.send_btn.setEnabled(True)
@@ -1458,26 +1727,25 @@ class OnlineChatWidget(QWidget):
         # 消息发送成功说明连接正常
         self.connection_error = False
         
-        # 添加消息到界面
+        # 验证消息数据结构
+        if not self.api._validate_message_structure(message_data):
+            print("警告: 发送的消息数据结构不完整")
+            return
+        
+        # 提取消息信息（按照分析报告的ChatMessage模型）
         content = message_data.get('content', '')
         sender_name = message_data.get('sender_name', self.current_user)
+        sender_role = message_data.get('sender_role', '')  # 添加角色信息
         timestamp = message_data.get('timestamp', '')
         message_type = message_data.get('message_type', 'text')
-        message_id = message_data.get('id', '')  # 获取消息ID
+        message_id = message_data.get('id', '')
         
-        # 格式化时间戳
-        if timestamp:
-            try:
-                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                formatted_time = dt.strftime("%H:%M")
-            except:
-                formatted_time = datetime.now().strftime("%H:%M")
-        else:
-            formatted_time = datetime.now().strftime("%H:%M")
+        # 格式化时间戳（ISO格式）
+        formatted_time = self._format_timestamp(timestamp)
         
         # 构建文件信息（如果是文件消息）
         file_info = None
-        if message_type == "file":
+        if message_type in ["file", "image"]:
             file_info = {
                 'file_name': message_data.get('file_name', '未知文件'),
                 'file_url': message_data.get('file_url', ''),
@@ -1485,15 +1753,8 @@ class OnlineChatWidget(QWidget):
                 'content': content
             }
             
-        # 发送的消息总是当前用户的，强制设置为True
         # 获取当前用户职业信息
-        current_user_profession = ""
-        try:
-            user_info = self.token_manager.get_user_info()
-            if user_info:
-                current_user_profession = user_info.get('profession', '')
-        except:
-            pass
+        current_user_profession = self._get_user_profession(sender_role)
         
         # 创建消息气泡并设置message_id
         if message_type == "file" and file_info:
@@ -1501,9 +1762,13 @@ class OnlineChatWidget(QWidget):
         else:
             bubble = OnlineChatBubble(content, True, sender_name, formatted_time, current_user_profession)
         
-        # 设置消息ID用于去重
+        # 设置消息ID和其他属性用于去重和管理
         if message_id:
             bubble.message_id = message_id
+        bubble.text = content
+        bubble.timestamp = formatted_time
+        bubble.sender_name = sender_name
+        bubble.message_type = message_type
             
         self.chat_layout.addWidget(bubble)
         
@@ -1512,10 +1777,10 @@ class OnlineChatWidget(QWidget):
             self.scroll.verticalScrollBar().maximum()
         ))
         
-        print(f"发送消息: '{content}' | 类型: '{message_type}' | 发送者: '{sender_name}' | ID: '{message_id}' | 强制显示在右边")
+        print(f"✅ 消息发送成功: '{content[:30]}...' | 类型: '{message_type}' | 发送者: '{sender_name}' | 角色: '{sender_role}' | ID: '{message_id}'")
         
     def on_messages_loaded(self, messages):
-        """消息加载完成处理"""
+        """消息加载完成处理 - 根据分析报告优化"""
         self.loading_indicator.hide()
         self.connection_error = False  # 成功加载说明连接正常
         self.status_label.setText("已连接")
@@ -1538,40 +1803,22 @@ class OnlineChatWidget(QWidget):
                     existing_message_signatures.add(signature)
         
         # 获取当前用户的所有可能标识
-        possible_user_names = set()
-        if self.current_user:
-            possible_user_names.add(self.current_user)
+        possible_user_names = self._get_possible_user_names()
         
-        # 从token管理器获取用户信息
-        try:
-            user_info = self.token_manager.get_user_info()
-            if user_info and user_info.get('username'):
-                possible_user_names.add(user_info.get('username'))
-        except:
-            pass
-        
-        # 打印调试信息
-        print(f"当前用户身份标识: {possible_user_names}")
-        print(f"已存在消息ID数量: {len(existing_messages)}")
-        print(f"已存在消息签名数量: {len(existing_message_signatures)}")
+        print(f"📋 开始加载 {len(messages)} 条消息，当前用户标识: {possible_user_names}")
         
         # 添加消息到界面
         for message in reversed(messages):  # 倒序显示，最新的在下面
             message_id = message.get('id', '')
             content = message.get('content', '')
             sender_name = message.get('sender_name', '未知用户')
+            sender_role = message.get('sender_role', '')  # 添加角色信息支持
             timestamp = message.get('timestamp', '')
             sender_id = message.get('sender_id', 0)
             message_type = message.get('message_type', 'text')
             
             # 格式化时间戳
-            formatted_time = ""
-            if timestamp:
-                try:
-                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                    formatted_time = dt.strftime("%H:%M")
-                except:
-                    formatted_time = ""
+            formatted_time = self._format_timestamp(timestamp)
             
             # 创建消息签名用于去重
             message_signature = f"{content}_{formatted_time}_{sender_name}"
@@ -1586,7 +1833,7 @@ class OnlineChatWidget(QWidget):
             
             # 2. 基于消息签名去重（备用机制）
             elif message_signature in existing_message_signatures:
-                print(f"跳过重复消息 (签名): {message_signature}")
+                print(f"跳过重复消息 (签名): {message_signature[:50]}...")
                 should_skip = True
             
             if should_skip:
@@ -1595,12 +1842,9 @@ class OnlineChatWidget(QWidget):
             # 增强的用户身份判断逻辑
             is_user = sender_name in possible_user_names
             
-            # 调试输出
-            print(f"添加消息: '{content[:20]}...' | 类型: '{message_type}' | 发送者: '{sender_name}' | ID: '{message_id}' | 是当前用户: {is_user}")
-            
             # 构建文件信息（如果是文件消息）
             file_info = None
-            if message_type == "file":
+            if message_type in ["file", "image"]:
                 file_info = {
                     'file_name': message.get('file_name', '未知文件'),
                     'file_url': message.get('file_url', ''),
@@ -1609,7 +1853,7 @@ class OnlineChatWidget(QWidget):
                 }
                 
             # 获取发送者职业信息
-            sender_profession = message.get('profession', '')
+            sender_profession = self._get_user_profession(sender_role)
             
             # 创建消息气泡并添加消息ID
             if message_type == "file" and file_info:
@@ -1617,15 +1861,73 @@ class OnlineChatWidget(QWidget):
             else:
                 bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time, sender_profession)
                 
-            # 设置消息ID和其他属性用于去重
+            # 设置消息ID和其他属性用于去重和管理
             if message_id:
                 bubble.message_id = message_id
-            bubble.text = content  # 添加text属性用于签名去重
-            bubble.timestamp = formatted_time  # 添加timestamp属性用于签名去重
-            bubble.sender_name = sender_name  # 添加sender_name属性用于签名去重
+            bubble.text = content
+            bubble.timestamp = formatted_time
+            bubble.sender_name = sender_name
+            bubble.message_type = message_type
             
             self.chat_layout.addWidget(bubble)
             
+            # 调试输出
+            print(f"📝 添加消息: '{content[:20]}...' | 类型: '{message_type}' | 发送者: '{sender_name}' | 角色: '{sender_role}' | ID: '{message_id}' | 是当前用户: {is_user}")
+        
+        # 滚动到底部
+        QTimer.singleShot(100, lambda: self.scroll.verticalScrollBar().setValue(
+            self.scroll.verticalScrollBar().maximum()
+        ))
+        
+        print(f"✅ 消息加载完成，共显示 {self.chat_layout.count()} 条消息")
+    
+    def _format_timestamp(self, timestamp):
+        """格式化时间戳 - 支持ISO格式"""
+        if not timestamp:
+            return datetime.now().strftime("%H:%M")
+            
+        try:
+            # 尝试解析ISO格式时间戳（按照分析报告的格式）
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            return dt.strftime("%H:%M")
+        except Exception as e:
+            print(f"时间戳解析失败: {timestamp}, 错误: {e}")
+            return datetime.now().strftime("%H:%M")
+    
+    def _get_user_profession(self, sender_role=None):
+        """获取用户职业信息"""
+        # 优先使用传入的角色信息
+        if sender_role:
+            return sender_role
+            
+        # 从token获取当前用户职业信息
+        try:
+            user_info = self.token_manager.get_user_info()
+            if user_info:
+                return user_info.get('profession', '')
+        except Exception as e:
+            print(f"获取用户职业信息失败: {e}")
+        
+        return ""
+    
+    def _get_possible_user_names(self):
+        """获取当前用户的所有可能标识"""
+        possible_user_names = set()
+        
+        # 添加当前用户名
+        if self.current_user:
+            possible_user_names.add(self.current_user)
+        
+        # 从token管理器获取用户信息
+        try:
+            user_info = self.token_manager.get_user_info()
+            if user_info and user_info.get('username'):
+                possible_user_names.add(user_info.get('username'))
+        except Exception as e:
+            print(f"获取token用户信息失败: {e}")
+        
+        return possible_user_names
+    
     def on_online_users_loaded(self, users):
         """在线用户加载完成处理"""
         # 清空当前用户列表
