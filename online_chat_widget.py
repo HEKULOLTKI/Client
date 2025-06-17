@@ -37,12 +37,13 @@ class OnlineLoadingIndicator(QProgressBar):
 
 class OnlineChatBubble(QFrame):
     """在线聊天气泡组件"""
-    def __init__(self, text, is_user=True, sender_name="", timestamp="", parent=None):
+    def __init__(self, text, is_user=True, sender_name="", timestamp="", profession="", parent=None):
         super().__init__(parent)
         self.is_user = is_user
         self.text = text
         self.sender_name = sender_name
         self.timestamp = timestamp
+        self.profession = profession
         
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         
@@ -100,9 +101,17 @@ class OnlineChatBubble(QFrame):
         avatar = QLabel()
         avatar.setFixedSize(40, 40)
         if is_user:
-            avatar_pixmap = QPixmap(config.get_avatar_path('user'))
+            # 当前用户头像：优先根据职业选择，默认使用系统架构师
+            if self.profession:
+                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+            else:
+                avatar_pixmap = QPixmap(config.get_avatar_path('user'))
         else:
-            avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+            # 其他用户头像：优先根据职业选择，默认使用网络规划设计师
+            if self.profession:
+                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+            else:
+                avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
         
         avatar.setPixmap(avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         avatar.setStyleSheet("""
@@ -202,12 +211,13 @@ class OnlineChatBubble(QFrame):
 
 class FileChatBubble(QFrame):
     """文件消息气泡组件 - 支持点击下载"""
-    def __init__(self, file_info, is_user=True, sender_name="", timestamp="", parent=None):
+    def __init__(self, file_info, is_user=True, sender_name="", timestamp="", profession="", parent=None):
         super().__init__(parent)
         self.is_user = is_user
         self.file_info = file_info
         self.sender_name = sender_name
         self.timestamp = timestamp
+        self.profession = profession
         
         # 从文件信息中提取数据
         self.file_name = file_info.get('file_name', '未知文件')
@@ -357,9 +367,17 @@ class FileChatBubble(QFrame):
         avatar = QLabel()
         avatar.setFixedSize(40, 40)
         if self.is_user:
-            avatar_pixmap = QPixmap(config.get_avatar_path('user'))
+            # 当前用户头像：优先根据职业选择，默认使用系统架构师
+            if self.profession:
+                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+            else:
+                avatar_pixmap = QPixmap(config.get_avatar_path('user'))
         else:
-            avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+            # 其他用户头像：优先根据职业选择，默认使用网络规划设计师
+            if self.profession:
+                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+            else:
+                avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
         
         avatar.setPixmap(avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         avatar.setStyleSheet("""
@@ -1163,16 +1181,16 @@ class OnlineChatWidget(QWidget):
         """设置聊天室ID"""
         self.api.set_room_id(room_id)
         
-    def add_message(self, content, is_user=False, sender_name="", timestamp="", message_type="text", file_info=None):
+    def add_message(self, content, is_user=False, sender_name="", timestamp="", message_type="text", file_info=None, profession=""):
         """添加消息到聊天区域"""
         if not timestamp:
             timestamp = datetime.now().strftime("%H:%M")
         
         # 如果是文件消息，使用FileChatBubble
         if message_type == "file" and file_info:
-            bubble = FileChatBubble(file_info, is_user, sender_name, timestamp)
+            bubble = FileChatBubble(file_info, is_user, sender_name, timestamp, profession)
         else:
-            bubble = OnlineChatBubble(content, is_user, sender_name, timestamp)
+            bubble = OnlineChatBubble(content, is_user, sender_name, timestamp, profession)
             
         self.chat_layout.addWidget(bubble)
         
@@ -1383,10 +1401,17 @@ class OnlineChatWidget(QWidget):
         user_layout.setContentsMargins(8, 5, 8, 5)
         user_layout.setSpacing(8)
         
-        # 用户头像
+        # 用户头像 - 根据职业信息选择
         avatar = QLabel()
         avatar.setFixedSize(30, 30)
-        avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+        
+        # 获取用户职业信息
+        profession = user_info.get('profession', '')
+        if profession:
+            avatar_pixmap = QPixmap(config.get_avatar_by_profession(profession))
+        else:
+            avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+        
         avatar.setPixmap(avatar_pixmap.scaled(30, 30, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         avatar.setStyleSheet("""
             QLabel {
@@ -1438,6 +1463,7 @@ class OnlineChatWidget(QWidget):
         sender_name = message_data.get('sender_name', self.current_user)
         timestamp = message_data.get('timestamp', '')
         message_type = message_data.get('message_type', 'text')
+        message_id = message_data.get('id', '')  # 获取消息ID
         
         # 格式化时间戳
         if timestamp:
@@ -1460,9 +1486,33 @@ class OnlineChatWidget(QWidget):
             }
             
         # 发送的消息总是当前用户的，强制设置为True
-        self.add_message(content, is_user=True, sender_name=sender_name, 
-                        timestamp=formatted_time, message_type=message_type, file_info=file_info)
-        print(f"发送消息: '{content}' | 类型: '{message_type}' | 发送者: '{sender_name}' | 强制显示在右边")
+        # 获取当前用户职业信息
+        current_user_profession = ""
+        try:
+            user_info = self.token_manager.get_user_info()
+            if user_info:
+                current_user_profession = user_info.get('profession', '')
+        except:
+            pass
+        
+        # 创建消息气泡并设置message_id
+        if message_type == "file" and file_info:
+            bubble = FileChatBubble(file_info, True, sender_name, formatted_time, current_user_profession)
+        else:
+            bubble = OnlineChatBubble(content, True, sender_name, formatted_time, current_user_profession)
+        
+        # 设置消息ID用于去重
+        if message_id:
+            bubble.message_id = message_id
+            
+        self.chat_layout.addWidget(bubble)
+        
+        # 滚动到底部
+        QTimer.singleShot(100, lambda: self.scroll.verticalScrollBar().setValue(
+            self.scroll.verticalScrollBar().maximum()
+        ))
+        
+        print(f"发送消息: '{content}' | 类型: '{message_type}' | 发送者: '{sender_name}' | ID: '{message_id}' | 强制显示在右边")
         
     def on_messages_loaded(self, messages):
         """消息加载完成处理"""
@@ -1472,10 +1522,20 @@ class OnlineChatWidget(QWidget):
         
         # 获取已存在的消息ID，避免重复添加
         existing_messages = set()
+        existing_message_signatures = set()  # 基于内容和时间戳的签名
+        
         for i in range(self.chat_layout.count()):
             item = self.chat_layout.itemAt(i)
-            if item and hasattr(item.widget(), 'message_id'):
-                existing_messages.add(item.widget().message_id)
+            widget = item.widget() if item else None
+            if widget:
+                # 基于ID去重
+                if hasattr(widget, 'message_id') and widget.message_id:
+                    existing_messages.add(widget.message_id)
+                
+                # 基于内容和时间戳去重（作为备用机制）
+                if hasattr(widget, 'text') and hasattr(widget, 'timestamp'):
+                    signature = f"{widget.text}_{widget.timestamp}_{getattr(widget, 'sender_name', '')}"
+                    existing_message_signatures.add(signature)
         
         # 获取当前用户的所有可能标识
         possible_user_names = set()
@@ -1492,34 +1552,51 @@ class OnlineChatWidget(QWidget):
         
         # 打印调试信息
         print(f"当前用户身份标识: {possible_user_names}")
+        print(f"已存在消息ID数量: {len(existing_messages)}")
+        print(f"已存在消息签名数量: {len(existing_message_signatures)}")
         
         # 添加消息到界面
         for message in reversed(messages):  # 倒序显示，最新的在下面
             message_id = message.get('id', '')
-            if message_id and message_id in existing_messages:
-                continue  # 跳过已存在的消息
-                
             content = message.get('content', '')
             sender_name = message.get('sender_name', '未知用户')
             timestamp = message.get('timestamp', '')
             sender_id = message.get('sender_id', 0)
             message_type = message.get('message_type', 'text')
             
-            # 增强的用户身份判断逻辑
-            is_user = sender_name in possible_user_names
-            
-            # 调试输出
-            print(f"消息: '{content[:20]}...' | 类型: '{message_type}' | 发送者: '{sender_name}' | 是当前用户: {is_user}")
-            
             # 格式化时间戳
+            formatted_time = ""
             if timestamp:
                 try:
                     dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                     formatted_time = dt.strftime("%H:%M")
                 except:
                     formatted_time = ""
-            else:
-                formatted_time = ""
+            
+            # 创建消息签名用于去重
+            message_signature = f"{content}_{formatted_time}_{sender_name}"
+            
+            # 多重去重检查
+            should_skip = False
+            
+            # 1. 基于消息ID去重
+            if message_id and message_id in existing_messages:
+                print(f"跳过重复消息 (ID): {message_id}")
+                should_skip = True
+            
+            # 2. 基于消息签名去重（备用机制）
+            elif message_signature in existing_message_signatures:
+                print(f"跳过重复消息 (签名): {message_signature}")
+                should_skip = True
+            
+            if should_skip:
+                continue
+                
+            # 增强的用户身份判断逻辑
+            is_user = sender_name in possible_user_names
+            
+            # 调试输出
+            print(f"添加消息: '{content[:20]}...' | 类型: '{message_type}' | 发送者: '{sender_name}' | ID: '{message_id}' | 是当前用户: {is_user}")
             
             # 构建文件信息（如果是文件消息）
             file_info = None
@@ -1531,14 +1608,22 @@ class OnlineChatWidget(QWidget):
                     'content': content
                 }
                 
+            # 获取发送者职业信息
+            sender_profession = message.get('profession', '')
+            
             # 创建消息气泡并添加消息ID
             if message_type == "file" and file_info:
-                bubble = FileChatBubble(file_info, is_user, sender_name, formatted_time)
+                bubble = FileChatBubble(file_info, is_user, sender_name, formatted_time, sender_profession)
             else:
-                bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time)
+                bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time, sender_profession)
                 
+            # 设置消息ID和其他属性用于去重
             if message_id:
                 bubble.message_id = message_id
+            bubble.text = content  # 添加text属性用于签名去重
+            bubble.timestamp = formatted_time  # 添加timestamp属性用于签名去重
+            bubble.sender_name = sender_name  # 添加sender_name属性用于签名去重
+            
             self.chat_layout.addWidget(bubble)
             
     def on_online_users_loaded(self, users):

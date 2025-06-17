@@ -830,7 +830,6 @@ class FullscreenBrowser(QMainWindow):
         
         event.accept()
 
-
 def main():
     # 创建应用程序
     app = QApplication(sys.argv)

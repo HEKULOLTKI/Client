@@ -10,7 +10,7 @@ CHAT_API_TIMEOUT = 10  # API请求超时时间（秒）
 # 心跳配置
 HEARTBEAT_INTERVAL = 30000  # 心跳间隔（毫秒）
 RECONNECT_INTERVAL = 5000   # 重连间隔（毫秒）
-AUTO_REFRESH_INTERVAL = 1000  # 自动刷新间隔（毫秒） - 1秒刷新一次
+AUTO_REFRESH_INTERVAL = 1000  # 自动刷新间隔（毫秒） - 3秒刷新一次，减少频繁刷新
 
 # 文件上传配置
 UPLOAD_MAX_SIZE = 50 * 1024 * 1024  # 最大文件大小 50MB
@@ -149,16 +149,21 @@ def get_avatar_by_profession(profession_name):
     profession_name: 职业名称
     """
     profession_avatar_map = {
+        # 中文职业名称映射
         '网络规划设计师': 'network_engineer',
         '系统规划与管理师': 'network_planning', 
         '系统架构师': 'system_architect',
-        # 添加更多职业映射
+        # 英文职业代码映射
         'network_engineer': 'network_engineer',
         'network_planning': 'network_planning',
-        'system_architect': 'system_architect'
+        'system_architect': 'system_architect',
+        # 兼容性别名
+        '网络工程师': 'network_engineer',
+        '规划管理师': 'network_planning',
+        '架构师': 'system_architect'
     }
     
-    avatar_type = profession_avatar_map.get(profession_name, 'user')
+    avatar_type = profession_avatar_map.get(profession_name, 'online_user')
     return get_avatar_path(avatar_type)
 
 def is_file_allowed(filename):
