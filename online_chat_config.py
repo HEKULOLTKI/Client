@@ -4,12 +4,13 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 服务器配置
-CHAT_API_BASE_URL = "http://localhost:8000"  # 聊天API服务器地址
+CHAT_API_BASE_URL = "http://172.18.122.8:8000"  # 聊天API服务器地址
 CHAT_API_TIMEOUT = 10  # API请求超时时间（秒）
 
 # 心跳配置
 HEARTBEAT_INTERVAL = 30000  # 心跳间隔（毫秒）
 RECONNECT_INTERVAL = 5000   # 重连间隔（毫秒）
+AUTO_REFRESH_INTERVAL = 1000  # 自动刷新间隔（毫秒） - 1秒刷新一次
 
 # 文件上传配置
 UPLOAD_MAX_SIZE = 50 * 1024 * 1024  # 最大文件大小 50MB

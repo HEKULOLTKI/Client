@@ -1,0 +1,122 @@
+{
+  "tasks": [
+    {
+      "id": 27,
+      "assignment_id": 27,
+      "name": "网络架构设计",
+      "task_name": "网络架构设计",
+      "description": "",
+      "type": "网络搭建任务",
+      "task_type": "网络搭建任务",
+      "phase": "计划阶段",
+      "task_phase": "计划阶段",
+      "status": "进行中",
+      "assignment_status": "进行中",
+      "progress": 0,
+      "assignment_progress": 0,
+      "completion_percentage": 0,
+      "performance_score": 0,
+      "assigned_at": "2025-06-16T14:52:25",
+      "last_update": "2025-06-16T14:52:25",
+      "comments": "",
+      "priority": "normal",
+      "estimated_duration": "",
+      "requirements": [],
+      "deliverables": [],
+      "execution_status": "进行中",
+      "role_binding": "",
+      "original_data": {
+        "task_id": 33,
+        "user_id": 23,
+        "username": "user1",
+        "status": "进行中",
+        "progress": 0,
+        "performance_score": 0,
+        "comments": "",
+        "id": 27,
+        "assigned_at": "2025-06-16T14:52:25",
+        "last_update": "2025-06-16T14:52:25",
+        "task_name": "网络架构设计",
+        "task_type": "网络搭建任务",
+        "task_phase": "计划阶段"
+      },
+      "converted_at": "2025-06-17T15:58:42.016214",
+      "data_source": "api"
+    }
+  ],
+  "user_info": {
+    "user": {
+      "id": 23,
+      "username": "user1",
+      "role": "网络规划设计师",
+      "type": "操作员",
+      "status": "active",
+      "email": null,
+      "phone": null,
+      "department": null,
+      "position": null
+    },
+    "selectedRole": {
+      "label": "网络规划设计师",
+      "value": "网络规划设计师",
+      "description": "当前用户角色：网络规划设计师"
+    },
+    "session": {
+      "ip_address": "unknown",
+      "user_agent": "unknown",
+      "login_time": 1750147090.837
+    },
+    "sync_info": {
+      "sync_type": "fallback_user_export",
+      "sync_time": "2025-06-17T07:58:10.837Z",
+      "operator": {
+        "user_id": 23,
+        "username": "user1",
+        "operator_role": "网络规划设计师",
+        "operator_type": "操作员",
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTc1MDE0ODg4N30.pQjDZegqaYx50JadqS82YJYC8irpTKZMuWPhTnRkzVw"
+      },
+      "session": {
+        "ip_address": "unknown",
+        "user_agent": "unknown",
+        "login_time": 1750147090.837
+      },
+      "data_source": {
+        "database": "user_management",
+        "table": "users",
+        "version": "1.0",
+        "environment": "production"
+      }
+    },
+    "sync_summary": {
+      "total_users": 1,
+      "active_users": 1,
+      "inactive_users": 0,
+      "roles": [
+        "网络规划设计师"
+      ],
+      "types": [
+        "操作员"
+      ],
+      "sync_id": "sync_1750147090837",
+      "compression": "none"
+    },
+    "timestamp": "2025-06-17T07:58:10.837Z",
+    "sync_id": "sync_1750147090837",
+    "sync_type": "fallback_user_export"
+  },
+  "updated_at": "2025-06-17T07:58:10.837Z",
+  "data_source": "user_data_sync",
+  "original_format": "user_data_sync",
+  "validation_passed": true,
+  "processing_time": "2025-06-17T15:58:41.760846",
+  "needs_api_fetch": false,
+  "api_user_info": {
+    "user_id": 23,
+    "username": "user1",
+    "password": "123456",
+    "role": "网络规划设计师",
+    "type": "操作员",
+    "status": "active"
+  }
+}

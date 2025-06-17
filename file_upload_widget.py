@@ -62,11 +62,22 @@ class FileUploadThread(QThread):
     def upload_small_file(self, files, data):
         """上传小文件"""
         try:
+            # 为multipart/form-data请求准备headers
+            # 重要：不要设置Content-Type，让requests自动处理
+            upload_headers = {}
+            if self.headers:
+                upload_headers = self.headers.copy()
+                # 移除Content-Type，让requests自动设置multipart/form-data
+                upload_headers.pop('Content-Type', None)
+                upload_headers.pop('content-type', None)
+            
+            print(f"🔄 上传请求headers: {list(upload_headers.keys())}")
+            
             response = requests.post(
                 self.upload_url,
                 files=files,
                 data=data,
-                headers=self.headers,
+                headers=upload_headers,
                 timeout=config.CHAT_API_TIMEOUT * 3  # 上传超时时间更长
             )
             
@@ -74,8 +85,18 @@ class FileUploadThread(QThread):
                 result = response.json()
                 self.progress_updated.emit(100)
                 self.upload_completed.emit(result)
+            elif response.status_code == 401:
+                try:
+                    error_detail = response.json().get('detail', '认证失败')
+                    self.upload_failed.emit(f"认证失败 (401): {error_detail}")
+                except:
+                    self.upload_failed.emit(f"认证失败 (401): 需要登录或Token已过期")
             else:
-                self.upload_failed.emit(f"上传失败: HTTP {response.status_code}")
+                try:
+                    error_detail = response.json().get('detail', response.text)
+                    self.upload_failed.emit(f"上传失败 (HTTP {response.status_code}): {error_detail}")
+                except:
+                    self.upload_failed.emit(f"上传失败: HTTP {response.status_code}")
                 
         except Exception as e:
             self.upload_failed.emit(f"上传失败: {str(e)}")
@@ -103,11 +124,18 @@ class FileUploadThread(QThread):
                     'filename': filename
                 }
                 
+                # 为multipart请求准备headers
+                upload_headers = {}
+                if self.headers:
+                    upload_headers = self.headers.copy()
+                    upload_headers.pop('Content-Type', None)
+                    upload_headers.pop('content-type', None)
+                
                 response = requests.post(
                     f"{self.upload_url}/chunk",
                     files=files,
                     data=data,
-                    headers=self.headers,
+                    headers=upload_headers,
                     timeout=config.CHAT_API_TIMEOUT
                 )
                 
@@ -291,6 +319,44 @@ class FileUploadItem(QFrame):
         layout.addLayout(info_layout, 1)
         layout.addWidget(self.action_btn)
         layout.addWidget(self.remove_btn)
+    
+    def _get_auth_headers(self):
+        """获取认证头的改进方法"""
+        headers = {}
+        
+        # 方法1: 从直接父组件获取
+        parent = self.parent()
+        if parent and hasattr(parent, 'headers') and parent.headers:
+            headers = parent.headers.copy()
+            print(f"🔑 从直接父组件获取认证头: {list(headers.keys())}")
+            return headers
+        
+        # 方法2: 从间接父组件获取
+        if parent and parent.parent() and hasattr(parent.parent(), 'headers') and parent.parent().headers:
+            headers = parent.parent().headers.copy()
+            print(f"🔑 从间接父组件获取认证头: {list(headers.keys())}")
+            return headers
+        
+        # 方法3: 遍历所有父组件查找headers
+        current = self
+        while current.parent() is not None:
+            current = current.parent()
+            if hasattr(current, 'headers') and current.headers:
+                headers = current.headers.copy()
+                print(f"🔑 从祖先组件获取认证头: {list(headers.keys())}")
+                return headers
+        
+        # 方法4: 查找具有api属性的父组件
+        current = self
+        while current.parent() is not None:
+            current = current.parent()
+            if hasattr(current, 'api') and current.api and hasattr(current.api, 'get_headers'):
+                headers = current.api.get_headers()
+                print(f"🔑 从API组件获取认证头: {list(headers.keys())}")
+                return headers
+        
+        print("❌ 未找到认证头，将尝试直接获取token")
+        return headers
         
     def start_upload(self):
         """开始上传"""
@@ -304,8 +370,29 @@ class FileUploadItem(QFrame):
         
         # 创建上传线程
         upload_url = f"{config.CHAT_API_BASE_URL}/api/chat/upload"
-        # 这里应该从父组件获取headers，包含JWT token
-        self.upload_thread = FileUploadThread(self.file_path, upload_url)
+        
+        # 改进的认证头获取机制
+        headers = self._get_auth_headers()
+        
+        # 验证认证头是否包含Authorization
+        if 'Authorization' not in headers:
+            print("❌ 警告：认证头中缺少Authorization字段，尝试自动获取token")
+            # 尝试直接从TokenManager获取token
+            try:
+                from token_manager import TokenManager
+                token_manager = TokenManager()
+                token = token_manager.get_token()
+                if token:
+                    headers['Authorization'] = f'Bearer {token}'
+                    print("✅ 成功从TokenManager获取并设置Authorization头")
+                else:
+                    print("❌ 无法从TokenManager获取token")
+            except Exception as e:
+                print(f"❌ 获取token失败: {e}")
+        else:
+            print("✅ 找到Authorization认证头")
+        
+        self.upload_thread = FileUploadThread(self.file_path, upload_url, headers)
         
         # 连接信号
         self.upload_thread.progress_updated.connect(self.on_progress_updated)
@@ -511,8 +598,14 @@ class FileUploadWidget(QWidget):
         
     def select_files(self, event=None):
         """选择文件"""
-        file_dialog = QFileDialog()
+        print("🔍 开始文件选择对话框...")
+        
+        file_dialog = QFileDialog(self)
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
+        
+        # 设置窗口属性，防止影响主应用程序
+        file_dialog.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        file_dialog.setModal(True)
         
         # 设置文件过滤器
         filters = []
@@ -524,9 +617,21 @@ class FileUploadWidget(QWidget):
         
         file_dialog.setNameFilters(filters)
         
-        if file_dialog.exec_():
-            file_paths = file_dialog.selectedFiles()
-            self.add_files(file_paths)
+        # 使用exec_()而不是exec()，并添加异常处理
+        try:
+            result = file_dialog.exec_()
+            if result == QFileDialog.Accepted:
+                file_paths = file_dialog.selectedFiles()
+                print(f"✅ 用户选择了 {len(file_paths)} 个文件")
+                self.add_files(file_paths)
+            else:
+                print("❌ 用户取消了文件选择")
+        except Exception as e:
+            print(f"❌ 文件选择对话框出错: {str(e)}")
+        finally:
+            # 确保对话框被正确销毁
+            file_dialog.deleteLater()
+            print("🔒 文件选择对话框已关闭")
     
     def add_files(self, file_paths):
         """添加文件到上传列表"""
@@ -574,9 +679,7 @@ class FileUploadWidget(QWidget):
         """上传所有文件"""
         for item in self.upload_items:
             if not item.is_uploaded:
-                # 设置认证头
-                if hasattr(item, 'upload_thread') and item.upload_thread:
-                    item.upload_thread.headers = self.headers
+                # 设置认证头 - 直接传递给start_upload方法
                 item.start_upload()
                 
         self.upload_all_btn.setEnabled(False)

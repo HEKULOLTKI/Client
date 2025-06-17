@@ -231,7 +231,12 @@ class FileUploadDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("文件上传")
         self.setFixedSize(600, 500)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        # 修改窗口标志，防止影响父窗口
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint | Qt.WindowStaysOnTopHint)
+        # 设置为模态对话框，但不阻塞其他应用程序
+        self.setModal(True)
+        # 防止关闭事件传播
+        self.setAttribute(Qt.WA_DeleteOnClose, False)
         
         self.setup_ui()
         
@@ -254,6 +259,21 @@ class FileUploadDialog(QDialog):
     def on_file_uploaded(self, file_info):
         """文件上传完成"""
         self.file_uploaded.emit(file_info)
+        
+    def set_auth_headers(self, headers):
+        """设置认证头"""
+        if hasattr(self, 'upload_widget'):
+            self.upload_widget.set_headers(headers)
+        
+    def closeEvent(self, event):
+        """重写关闭事件，防止事件传播"""
+        print("🔒 FileUploadDialog 正在关闭，阻止事件传播")
+        # 停止事件传播到父窗口
+        event.accept()
+        # 隐藏而不是销毁窗口
+        self.hide()
+        # 不调用父类的closeEvent，防止事件传播
+        # super().closeEvent(event)  # 注释掉这行
 
 class OnlineChatAPI(QThread):
     """在线聊天API处理线程"""
@@ -381,29 +401,40 @@ class OnlineChatWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.current_user = "当前用户"  # 默认用户名，可以通过方法设置
+        self.connection_error = False
+        self.current_user = ""
+        self._is_drag = False
+        self._drag_pos = QPoint()
+        
+        # 初始化API
         self.api = OnlineChatAPI()
+        
+        # 初始化Token管理器
+        self.token_manager = TokenManager()
+        
+        # 初始化心跳定时器
         self.heartbeat_timer = QTimer()
-        self.connection_error = False  # 连接错误标志
-        self.token_manager = TokenManager()  # 添加Token管理器
         
-        # 自动加载用户信息
-        self.load_user_from_token()
+        # 初始化自动刷新定时器
+        self.auto_refresh_timer = QTimer()
         
-        # 设置窗口属性
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
+        # 初始化窗口属性
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(*config.CHAT_WINDOW_SIZE)
         
-        # 初始化UI
+        # 创建UI
         self.setup_ui()
+        
+        # 设置连接
         self.setup_connections()
         
-        # 初始化拖动变量
-        self._is_drag = False
-        self._drag_pos = None
+        # 初始化界面状态
+        self.status_label.setText("正在连接...")
+        self.online_count_label.setText("等待连接")
         
-        # 检查服务器连接
-        self.check_server_connection()
+        # 自动加载用户token
+        self.load_user_from_token()
     
     def load_user_from_token(self):
         """从token加载用户信息"""
@@ -412,12 +443,20 @@ class OnlineChatWidget(QWidget):
             if user_info:
                 self.current_user = user_info.get('username', '当前用户')
                 print(f"从token加载用户信息成功: {self.current_user}")
+                # 连接服务器
+                self.check_server_connection()
                 return True
             else:
                 print("无法从token获取用户信息，使用默认用户名")
+                self.current_user = "当前用户"  # 设置默认用户名
+                # 连接服务器
+                self.check_server_connection()
                 return False
         except Exception as e:
             print(f"加载用户信息失败: {str(e)}")
+            self.current_user = "当前用户"  # 设置默认用户名
+            # 连接服务器
+            self.check_server_connection()
             return False
     
     def refresh_user_token(self):
@@ -764,16 +803,23 @@ class OnlineChatWidget(QWidget):
         
     def setup_connections(self):
         """设置信号连接"""
+        # API信号连接
         self.api.message_received.connect(self.on_message_sent)
         self.api.messages_loaded.connect(self.on_messages_loaded)
         self.api.online_users_loaded.connect(self.on_online_users_loaded)
         self.api.error_occurred.connect(self.on_error_occurred)
         
+        # 自动刷新定时器连接
+        self.auto_refresh_timer.timeout.connect(self.auto_refresh_messages)
+    
     def setup_heartbeat(self):
         """设置心跳定时器"""
         if not self.connection_error:
             self.heartbeat_timer.timeout.connect(self.send_heartbeat)
             self.heartbeat_timer.start(config.HEARTBEAT_INTERVAL)
+            
+            # 启动自动刷新定时器
+            self.auto_refresh_timer.start(config.AUTO_REFRESH_INTERVAL)
     
     def check_server_connection(self):
         """检查服务器连接"""
@@ -912,9 +958,32 @@ class OnlineChatWidget(QWidget):
         
     def upload_file(self):
         """打开文件上传对话框"""
+        print("🔍 准备打开文件上传对话框...")
+        
+        # 创建对话框时指定父窗口
         dialog = FileUploadDialog(self)
         dialog.file_uploaded.connect(self.on_file_uploaded)
-        dialog.exec_()
+        
+        # 设置认证头
+        if hasattr(self, 'api') and self.api:
+            headers = self.api.get_headers()
+            dialog.set_auth_headers(headers)
+        
+        # 使用异常处理包装对话框显示
+        try:
+            print("📂 显示文件上传对话框...")
+            result = dialog.exec_()
+            print(f"📂 文件上传对话框结果: {result}")
+        except Exception as e:
+            print(f"❌ 文件上传对话框出错: {str(e)}")
+        finally:
+            # 确保对话框被正确清理
+            try:
+                dialog.hide()
+                dialog.deleteLater()
+                print("🔒 文件上传对话框已安全关闭")
+            except Exception as e:
+                print(f"❌ 清理文件上传对话框时出错: {str(e)}")
     
     def on_file_uploaded(self, file_info):
         """处理文件上传完成"""
@@ -949,13 +1018,21 @@ class OnlineChatWidget(QWidget):
         # 重新加载数据
         self.load_initial_data()
         
+    def auto_refresh_messages(self):
+        """自动刷新消息（只加载新消息，不清空现有消息）"""
+        if not self.connection_error:
+            # 静默加载最新消息，避免频繁的UI更新
+            self.api.load_messages(limit=20)  # 加载最新的20条消息进行比较
+        
     def reset_connection(self):
         """重置连接状态并重新连接"""
         print(f"重置连接前状态: connection_error={self.connection_error}")
         
-        # 停止心跳
+        # 停止心跳和自动刷新定时器
         if self.heartbeat_timer.isActive():
             self.heartbeat_timer.stop()
+        if self.auto_refresh_timer.isActive():
+            self.auto_refresh_timer.stop()
         
         # 重置连接状态
         self.connection_error = False
@@ -1083,7 +1160,9 @@ class OnlineChatWidget(QWidget):
         else:
             formatted_time = datetime.now().strftime("%H:%M")
             
+        # 发送的消息总是当前用户的，强制设置为True
         self.add_message(content, is_user=True, sender_name=sender_name, timestamp=formatted_time)
+        print(f"发送消息: '{content}' | 发送者: '{sender_name}' | 强制显示在右边")
         
     def on_messages_loaded(self, messages):
         """消息加载完成处理"""
@@ -1091,15 +1170,45 @@ class OnlineChatWidget(QWidget):
         self.connection_error = False  # 成功加载说明连接正常
         self.status_label.setText("已连接")
         
+        # 获取已存在的消息ID，避免重复添加
+        existing_messages = set()
+        for i in range(self.chat_layout.count()):
+            item = self.chat_layout.itemAt(i)
+            if item and hasattr(item.widget(), 'message_id'):
+                existing_messages.add(item.widget().message_id)
+        
+        # 获取当前用户的所有可能标识
+        possible_user_names = set()
+        if self.current_user:
+            possible_user_names.add(self.current_user)
+        
+        # 从token管理器获取用户信息
+        try:
+            user_info = self.token_manager.get_user_info()
+            if user_info and user_info.get('username'):
+                possible_user_names.add(user_info.get('username'))
+        except:
+            pass
+        
+        # 打印调试信息
+        print(f"当前用户身份标识: {possible_user_names}")
+        
         # 添加消息到界面
         for message in reversed(messages):  # 倒序显示，最新的在下面
+            message_id = message.get('id', '')
+            if message_id and message_id in existing_messages:
+                continue  # 跳过已存在的消息
+                
             content = message.get('content', '')
             sender_name = message.get('sender_name', '未知用户')
             timestamp = message.get('timestamp', '')
             sender_id = message.get('sender_id', 0)
             
-            # 判断是否是当前用户发送的消息
-            is_user = sender_name == self.current_user
+            # 增强的用户身份判断逻辑
+            is_user = sender_name in possible_user_names
+            
+            # 调试输出
+            print(f"消息: '{content[:20]}...' | 发送者: '{sender_name}' | 是当前用户: {is_user}")
             
             # 格式化时间戳
             if timestamp:
@@ -1111,7 +1220,11 @@ class OnlineChatWidget(QWidget):
             else:
                 formatted_time = ""
                 
-            self.add_message(content, is_user, sender_name, formatted_time)
+            # 创建消息气泡并添加消息ID
+            bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time)
+            if message_id:
+                bubble.message_id = message_id
+            self.chat_layout.addWidget(bubble)
             
     def on_online_users_loaded(self, users):
         """在线用户加载完成处理"""
@@ -1196,7 +1309,9 @@ class OnlineChatWidget(QWidget):
         
     def closeEvent(self, event):
         """关闭事件"""
-        # 停止心跳定时器
+        # 停止心跳和自动刷新定时器
         if self.heartbeat_timer.isActive():
             self.heartbeat_timer.stop()
+        if self.auto_refresh_timer.isActive():
+            self.auto_refresh_timer.stop()
         event.accept() 
