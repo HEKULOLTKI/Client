@@ -30,9 +30,17 @@ UPLOAD_CHUNK_SIZE = 1024 * 1024  # 分块上传大小 1MB
 
 # 头像配置 - 使用工程师头像
 ENGINEER_AVATARS_PATH = os.path.join(BASE_DIR, "image", "engineer")
-DEFAULT_USER_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "system_architect.jpg")
-DEFAULT_ONLINE_USER_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "network_engineer.jpg")
-DEFAULT_SYSTEM_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "Network_Planning_and_Management_Engineer.jpg")
+# 网络规划设计师对应 network_engineer
+NETWORK_PLANNING_DESIGNER_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "network_engineer.jpg")
+# 系统规划与管理师对应 network_planning (原Network_Planning_and_Management_Engineer)
+NETWORK_PLANNING_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "Network_Planning_and_Management_Engineer.jpg")
+# 系统架构师对应 system_architect
+SYSTEM_ARCHITECT_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "system_architect.jpg")
+
+# 默认头像配置
+DEFAULT_USER_AVATAR = SYSTEM_ARCHITECT_AVATAR
+DEFAULT_ONLINE_USER_AVATAR = NETWORK_PLANNING_DESIGNER_AVATAR
+DEFAULT_SYSTEM_AVATAR = NETWORK_PLANNING_AVATAR
 
 # 备用头像路径（如果工程师头像不存在）
 ASSETS_PATH = os.path.join(BASE_DIR, "assets")
@@ -107,12 +115,16 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 def get_avatar_path(avatar_type='user'):
     """
     获取头像路径
-    avatar_type: 'user', 'online_user', 'system'
+    avatar_type: 'user', 'online_user', 'system', 'network_engineer', 'network_planning', 'system_architect'
     """
     avatar_map = {
         'user': DEFAULT_USER_AVATAR,
-        'online_user': DEFAULT_ONLINE_USER_AVATAR,
-        'system': DEFAULT_SYSTEM_AVATAR
+        'online_user': DEFAULT_ONLINE_USER_AVATAR, 
+        'system': DEFAULT_SYSTEM_AVATAR,
+        # 按职业类型分配头像
+        'network_engineer': NETWORK_PLANNING_DESIGNER_AVATAR,     # 网络规划设计师
+        'network_planning': NETWORK_PLANNING_AVATAR,             # 系统规划与管理师
+        'system_architect': SYSTEM_ARCHITECT_AVATAR              # 系统架构师
     }
     
     avatar_path = avatar_map.get(avatar_type, DEFAULT_USER_AVATAR)
@@ -122,11 +134,32 @@ def get_avatar_path(avatar_type='user'):
         fallback_map = {
             'user': FALLBACK_USER_AVATAR,
             'online_user': FALLBACK_ONLINE_USER_AVATAR,
-            'system': FALLBACK_ONLINE_USER_AVATAR
+            'system': FALLBACK_ONLINE_USER_AVATAR,
+            'network_engineer': FALLBACK_ONLINE_USER_AVATAR,
+            'network_planning': FALLBACK_ONLINE_USER_AVATAR,
+            'system_architect': FALLBACK_USER_AVATAR
         }
         return fallback_map.get(avatar_type, FALLBACK_USER_AVATAR)
     
     return avatar_path
+
+def get_avatar_by_profession(profession_name):
+    """
+    根据职业名称获取对应的头像路径
+    profession_name: 职业名称
+    """
+    profession_avatar_map = {
+        '网络规划设计师': 'network_engineer',
+        '系统规划与管理师': 'network_planning', 
+        '系统架构师': 'system_architect',
+        # 添加更多职业映射
+        'network_engineer': 'network_engineer',
+        'network_planning': 'network_planning',
+        'system_architect': 'system_architect'
+    }
+    
+    avatar_type = profession_avatar_map.get(profession_name, 'user')
+    return get_avatar_path(avatar_type)
 
 def is_file_allowed(filename):
     """检查文件是否允许上传"""
