@@ -5,7 +5,7 @@ import json
 import os
 
 # API 基础URL
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://172.18.122.8:8000"
 
 def get_current_username():
     """从received_data.json文件中获取当前登录用户的用户名（优先users数组）"""

@@ -1,7 +1,8 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLineEdit, QPushButton, 
                            QLabel, QHBoxLayout, QScrollArea, QFrame, 
                            QToolButton, QSizePolicy, QProgressBar, QLayout,
-                           QTextEdit, QFileDialog, QApplication, QMessageBox)
+                           QTextEdit, QFileDialog, QApplication, QMessageBox,
+                           QDialog, QDialogButtonBox)
 from PyQt5.QtCore import Qt, QPoint, QSize, QTimer, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal
 from PyQt5.QtGui import (QFont, QIcon, QPixmap, QPainter, QColor, QPainterPath, 
                         QPen, QFontMetrics)
@@ -9,7 +10,9 @@ import requests
 import time
 import json
 from datetime import datetime
-import config
+import online_chat_config as config
+from token_manager import TokenManager
+from file_upload_widget import FileUploadWidget
 
 class OnlineLoadingIndicator(QProgressBar):
     """在线聊天加载指示器"""
@@ -94,12 +97,9 @@ class OnlineChatBubble(QFrame):
         avatar = QLabel()
         avatar.setFixedSize(40, 40)
         if is_user:
-            avatar_pixmap = QPixmap("assets/user.png")
+            avatar_pixmap = QPixmap(config.get_avatar_path('user'))
         else:
-            avatar_pixmap = QPixmap("assets/online_user.png")
-            # 如果没有在线用户头像，使用默认头像
-            if avatar_pixmap.isNull():
-                avatar_pixmap = QPixmap("assets/pet_head.png")
+            avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
         
         avatar.setPixmap(avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         avatar.setStyleSheet("""
@@ -122,7 +122,7 @@ class OnlineChatBubble(QFrame):
         
         # 计算文本宽度
         font_metrics = QFontMetrics(text_label.font())
-        max_width = 450  # 最大宽度
+        max_width = config.CHAT_BUBBLE_MAX_WIDTH  # 最大宽度
         padding = 40    # 内边距总和
         
         # 计算实际文本宽度
@@ -223,6 +223,38 @@ class OnlineModernButton(QPushButton):
             }
         """)
 
+class FileUploadDialog(QDialog):
+    """文件上传对话框"""
+    file_uploaded = pyqtSignal(dict)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("文件上传")
+        self.setFixedSize(600, 500)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """设置UI"""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 文件上传组件
+        self.upload_widget = FileUploadWidget()
+        self.upload_widget.file_uploaded.connect(self.on_file_uploaded)
+        
+        # 按钮
+        button_box = QDialogButtonBox(QDialogButtonBox.Close)
+        button_box.rejected.connect(self.close)
+        
+        layout.addWidget(self.upload_widget)
+        layout.addWidget(button_box)
+        
+    def on_file_uploaded(self, file_info):
+        """文件上传完成"""
+        self.file_uploaded.emit(file_info)
+
 class OnlineChatAPI(QThread):
     """在线聊天API处理线程"""
     message_received = pyqtSignal(dict)
@@ -232,10 +264,32 @@ class OnlineChatAPI(QThread):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.base_url = "http://localhost:8000"  # 根据API文档的默认地址
+        self.base_url = config.CHAT_API_BASE_URL  # 使用配置文件中的服务器地址
         self.token = None  # 需要JWT Token
-        self.room_id = "global"  # 默认聊天室
+        self.room_id = config.CHAT_ROOM_ID  # 默认聊天室
+        self.token_manager = TokenManager()  # 添加Token管理器
+        self.auto_load_token()  # 自动加载token
         
+    def auto_load_token(self):
+        """自动从JSON文件加载token"""
+        try:
+            token = self.token_manager.get_token()
+            if token:
+                self.token = token
+                user_info = self.token_manager.get_user_info()
+                print(f"自动加载token成功，用户: {user_info.get('username', 'Unknown')}")
+                return True
+            else:
+                print("未能从配置文件中获取token")
+                return False
+        except Exception as e:
+            print(f"自动加载token失败: {str(e)}")
+            return False
+    
+    def refresh_token(self):
+        """刷新token"""
+        return self.auto_load_token()
+    
     def set_token(self, token):
         """设置JWT Token"""
         self.token = token
@@ -254,7 +308,7 @@ class OnlineChatAPI(QThread):
             headers['Authorization'] = f'Bearer {self.token}'
         return headers
     
-    def send_message(self, content, message_type="text", reply_to=None):
+    def send_message(self, content, message_type="text", reply_to=None, file_info=None):
         """发送消息"""
         try:
             url = f"{self.base_url}/api/chat/send"
@@ -265,9 +319,11 @@ class OnlineChatAPI(QThread):
             }
             if reply_to:
                 data["reply_to"] = reply_to
+            if file_info:
+                data["file_info"] = file_info
                 
             response = requests.post(url, json=data, headers=self.get_headers(), 
-                                   params=params, timeout=10)
+                                   params=params, timeout=config.CHAT_API_TIMEOUT)
             response.raise_for_status()
             
             message_data = response.json()
@@ -288,7 +344,7 @@ class OnlineChatAPI(QThread):
                 params["before"] = before
                 
             response = requests.get(url, headers=self.get_headers(), 
-                                  params=params, timeout=10)
+                                  params=params, timeout=config.CHAT_API_TIMEOUT)
             response.raise_for_status()
             
             messages = response.json()
@@ -301,7 +357,7 @@ class OnlineChatAPI(QThread):
         """加载在线用户列表"""
         try:
             url = f"{self.base_url}/api/chat/online-users"
-            response = requests.get(url, headers=self.get_headers(), timeout=10)
+            response = requests.get(url, headers=self.get_headers(), timeout=config.CHAT_API_TIMEOUT)
             response.raise_for_status()
             
             users = response.json()
@@ -314,7 +370,7 @@ class OnlineChatAPI(QThread):
         """发送心跳保持在线状态"""
         try:
             url = f"{self.base_url}/api/chat/heartbeat"
-            response = requests.post(url, headers=self.get_headers(), timeout=5)
+            response = requests.post(url, headers=self.get_headers(), timeout=config.CHAT_API_TIMEOUT)
             response.raise_for_status()
             
         except Exception as e:
@@ -329,6 +385,10 @@ class OnlineChatWidget(QWidget):
         self.api = OnlineChatAPI()
         self.heartbeat_timer = QTimer()
         self.offline_mode = False  # 离线模式标志
+        self.token_manager = TokenManager()  # 添加Token管理器
+        
+        # 自动加载用户信息
+        self.load_user_from_token()
         
         # 设置窗口属性
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
@@ -344,6 +404,28 @@ class OnlineChatWidget(QWidget):
         
         # 检查服务器连接，如果失败则进入离线模式
         self.check_server_connection()
+    
+    def load_user_from_token(self):
+        """从token加载用户信息"""
+        try:
+            user_info = self.token_manager.get_user_info()
+            if user_info:
+                self.current_user = user_info.get('username', '当前用户')
+                print(f"从token加载用户信息成功: {self.current_user}")
+                return True
+            else:
+                print("无法从token获取用户信息，使用默认用户名")
+                return False
+        except Exception as e:
+            print(f"加载用户信息失败: {str(e)}")
+            return False
+    
+    def refresh_user_token(self):
+        """刷新用户token和信息"""
+        if self.api.refresh_token():
+            self.load_user_from_token()
+            return True
+        return False
         
     def setup_ui(self):
         """设置用户界面"""
@@ -393,7 +475,7 @@ class OnlineChatWidget(QWidget):
         main_layout.addWidget(main_container)
         
         # 设置窗口大小
-        self.setFixedSize(800, 700)
+        self.setFixedSize(*config.CHAT_WINDOW_SIZE)
         
     def create_title_bar(self, layout):
         """创建标题栏"""
@@ -672,7 +754,7 @@ class OnlineChatWidget(QWidget):
         """设置心跳定时器"""
         if not self.offline_mode:
             self.heartbeat_timer.timeout.connect(self.send_heartbeat)
-            self.heartbeat_timer.start(30000)
+            self.heartbeat_timer.start(config.HEARTBEAT_INTERVAL)
     
     def check_server_connection(self):
         """检查服务器连接"""
@@ -827,16 +909,28 @@ class OnlineChatWidget(QWidget):
         self.api.send_message(text)
         
     def upload_file(self):
-        """上传文件"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择文件", "", 
-            "图片文件 (*.png *.jpg *.jpeg *.gif *.webp);;文档文件 (*.pdf *.txt *.doc *.docx *.xls *.xlsx);;所有文件 (*.*)"
-        )
+        """打开文件上传对话框"""
+        dialog = FileUploadDialog(self)
+        dialog.file_uploaded.connect(self.on_file_uploaded)
+        dialog.exec_()
+    
+    def on_file_uploaded(self, file_info):
+        """处理文件上传完成"""
+        # 发送文件消息
+        filename = file_info.get('filename', '未知文件')
+        file_size = file_info.get('file_size', 0)
+        file_url = file_info.get('file_url', '')
         
-        if file_path:
-            # 这里应该实现文件上传逻辑
-            # 目前只显示提示
-            QMessageBox.information(self, "文件上传", f"文件上传功能开发中\n选择的文件: {file_path}")
+        # 构造文件消息内容
+        file_message = f"📎 {filename}\n大小: {config.format_file_size(file_size)}"
+        
+        if self.offline_mode:
+            # 离线模式下直接显示文件消息
+            timestamp = datetime.now().strftime("%H:%M")
+            self.add_message(file_message, is_user=True, sender_name=self.current_user, timestamp=timestamp)
+        else:
+            # 在线模式通过API发送文件消息
+            self.api.send_message(file_message, message_type="file", file_info=file_info)
             
     def refresh_chat(self):
         """刷新聊天"""
@@ -885,9 +979,7 @@ class OnlineChatWidget(QWidget):
         # 用户头像
         avatar = QLabel()
         avatar.setFixedSize(30, 30)
-        avatar_pixmap = QPixmap("assets/online_user.png")
-        if avatar_pixmap.isNull():
-            avatar_pixmap = QPixmap("assets/user.png")
+        avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
         avatar.setPixmap(avatar_pixmap.scaled(30, 30, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         avatar.setStyleSheet("""
             QLabel {

@@ -498,7 +498,7 @@ class DataProcessor:
 class APIClient:
     """API客户端 - 用于从后端API获取任务数据"""
     
-    def __init__(self, base_url="http://localhost:8000"):
+    def __init__(self, base_url="http://172.18.122.8:8000"):
         self.base_url = base_url.rstrip('/')
         self.session = None
         self.access_token = None
