@@ -379,7 +379,7 @@ class FullscreenBrowser(QMainWindow):
         self.setCentralWidget(self.browser)
         
         # 加载网页
-        self.browser.load(QUrl("http://localhost:3000"))
+        self.browser.load(QUrl("http://172.18.122.8:3000"))
         
         # 设置窗口标题
         self.setWindowTitle("全屏浏览器 - localhost:3000 | API: 8800端口")
