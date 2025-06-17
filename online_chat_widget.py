@@ -384,7 +384,7 @@ class OnlineChatWidget(QWidget):
         self.current_user = "当前用户"  # 默认用户名，可以通过方法设置
         self.api = OnlineChatAPI()
         self.heartbeat_timer = QTimer()
-        self.offline_mode = False  # 离线模式标志
+        self.connection_error = False  # 连接错误标志
         self.token_manager = TokenManager()  # 添加Token管理器
         
         # 自动加载用户信息
@@ -402,7 +402,7 @@ class OnlineChatWidget(QWidget):
         self._is_drag = False
         self._drag_pos = None
         
-        # 检查服务器连接，如果失败则进入离线模式
+        # 检查服务器连接
         self.check_server_connection()
     
     def load_user_from_token(self):
@@ -703,8 +703,27 @@ class OnlineChatWidget(QWidget):
         """)
         self.refresh_btn.clicked.connect(self.refresh_chat)
         
+        # 重连按钮
+        self.reconnect_btn = QPushButton("🔌 重连")
+        self.reconnect_btn.setFixedHeight(35)
+        self.reconnect_btn.setFont(QFont("Microsoft YaHei UI", 9))
+        self.reconnect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f8f9fa;
+                color: #666666;
+                border: 1px solid #E8E8E8;
+                border-radius: 17px;
+                padding: 5px 15px;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+            }
+        """)
+        self.reconnect_btn.clicked.connect(self.reset_connection)
+        
         toolbar_layout.addWidget(self.file_btn)
         toolbar_layout.addWidget(self.refresh_btn)
+        toolbar_layout.addWidget(self.reconnect_btn)
         toolbar_layout.addStretch()
         
         input_layout.addLayout(toolbar_layout)
@@ -752,31 +771,31 @@ class OnlineChatWidget(QWidget):
         
     def setup_heartbeat(self):
         """设置心跳定时器"""
-        if not self.offline_mode:
+        if not self.connection_error:
             self.heartbeat_timer.timeout.connect(self.send_heartbeat)
             self.heartbeat_timer.start(config.HEARTBEAT_INTERVAL)
     
     def check_server_connection(self):
         """检查服务器连接"""
         try:
-            # 尝试简单的连接测试
-            response = requests.get(f"{self.api.base_url}/api/status", timeout=3)
+            # 通过健康检查端点测试服务器连接
+            response = requests.get(f"{self.api.base_url}/health", timeout=3)
             if response.status_code == 200:
-                self.offline_mode = False
+                self.connection_error = False
                 self.status_label.setText("正在连接...")
                 self.setup_heartbeat()
                 self.load_initial_data()
             else:
-                self.enter_offline_mode()
+                self.handle_connection_error("服务器健康检查失败")
         except Exception as e:
             print(f"服务器连接失败: {str(e)}")
-            self.enter_offline_mode()
+            self.handle_connection_error(f"服务器连接失败: {str(e)}")
     
-    def enter_offline_mode(self):
-        """进入离线模式"""
-        self.offline_mode = True
-        self.status_label.setText("离线模式")
-        self.online_count_label.setText("离线: 0")
+    def handle_connection_error(self, error_message):
+        """处理连接错误"""
+        self.connection_error = True
+        self.status_label.setText("连接失败")
+        self.online_count_label.setText("无连接")
         self.online_count_label.setStyleSheet("""
             QLabel {
                 color: #e74c3c;
@@ -786,72 +805,14 @@ class OnlineChatWidget(QWidget):
             }
         """)
         
-        # 添加离线模式说明
+        # 显示错误信息
         self.add_message(
-            "当前处于离线模式，无法连接到聊天服务器。\n您可以在此测试界面功能，但无法发送真实消息。", 
+            f"连接服务器失败: {error_message}", 
             is_user=False, 
             sender_name="系统", 
             timestamp="--:--"
         )
-        
-        # 添加一些示例用户和消息
-        self.load_offline_demo_data()
     
-    def load_offline_demo_data(self):
-        """加载离线演示数据"""
-        # 添加示例消息
-        demo_messages = [
-            {"content": "欢迎使用在线聊天室！", "sender": "系统", "time": "09:00"},
-            {"content": "大家好！", "sender": "张三", "time": "09:15"},
-            {"content": "有人在吗？", "sender": "李四", "time": "09:30"},
-        ]
-        
-        for msg in demo_messages:
-            self.add_message(
-                msg["content"],
-                is_user=False,
-                sender_name=msg["sender"],
-                timestamp=msg["time"]
-            )
-        
-        # 添加示例在线用户
-        demo_users = [
-            {"username": "张三", "user_id": 1},
-            {"username": "李四", "user_id": 2},
-            {"username": "王五", "user_id": 3},
-            {"username": self.current_user, "user_id": 4}
-        ]
-        
-        for user in demo_users:
-            self.add_online_user(user)
-        
-        self.online_count_label.setText(f"演示: {len(demo_users)}")
-    
-    def load_initial_data(self):
-        """加载初始数据"""
-        if self.offline_mode:
-            self.load_offline_demo_data()
-            return
-            
-        self.loading_indicator.show()
-        self.status_label.setText("正在加载...")
-        
-        # 加载消息历史
-        self.api.load_messages()
-        
-        # 加载在线用户
-        self.api.load_online_users()  # 每30秒发送一次心跳
-        
-    def set_user_info(self, username, token=None):
-        """设置用户信息"""
-        self.current_user = username
-        if token:
-            self.api.set_token(token)
-            
-    def set_room_id(self, room_id):
-        """设置聊天室ID"""
-        self.api.set_room_id(room_id)
-        
     def load_initial_data(self):
         """加载初始数据"""
         self.loading_indicator.show()
@@ -862,6 +823,16 @@ class OnlineChatWidget(QWidget):
         
         # 加载在线用户
         self.api.load_online_users()
+        
+    def set_user_info(self, username, token=None):
+        """设置用户信息"""
+        self.current_user = username
+        if token:
+            self.api.set_token(token)
+            
+    def set_room_id(self, room_id):
+        """设置聊天室ID"""
+        self.api.set_room_id(room_id)
         
     def add_message(self, content, is_user=False, sender_name="", timestamp=""):
         """添加消息到聊天区域"""
@@ -885,18 +856,14 @@ class OnlineChatWidget(QWidget):
         # 清空输入框
         self.input.clear()
         
-        if self.offline_mode:
-            # 离线模式下模拟发送
-            timestamp = datetime.now().strftime("%H:%M")
-            self.add_message(text, is_user=True, sender_name=self.current_user, timestamp=timestamp)
-            
-            # 模拟系统回复
-            QTimer.singleShot(1000, lambda: self.add_message(
-                "这是离线模式的模拟回复。实际聊天需要连接到服务器。",
-                is_user=False,
-                sender_name="系统",
+        # 检查服务器连接状态
+        if self.connection_error:
+            self.add_message(
+                "无法发送消息：服务器连接已断开，请点击重连", 
+                is_user=False, 
+                sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
-            ))
+            )
             return
             
         # 在线模式
@@ -907,6 +874,41 @@ class OnlineChatWidget(QWidget):
         
         # 发送消息
         self.api.send_message(text)
+        
+    def check_connection_before_send(self):
+        """发送消息前检查连接状态"""
+        print(f"发送消息前检查连接状态: connection_error={self.connection_error}")
+        print(f"API base_url: {self.api.base_url}")
+        
+        try:
+            # 通过健康检查端点快速测试连接
+            response = requests.get(f"{self.api.base_url}/health", timeout=2)
+            print(f"健康检查响应状态码: {response.status_code}")
+            
+            if response.status_code == 200:
+                self.connection_error = False
+                print("健康检查成功，允许发送消息")
+                return True
+            else:
+                self.connection_error = True
+                print(f"健康检查失败，状态码: {response.status_code}")
+                self.add_message(
+                    f"无法发送消息：服务器健康检查异常 (状态码: {response.status_code})", 
+                    is_user=False, 
+                    sender_name="系统", 
+                    timestamp=datetime.now().strftime("%H:%M")
+                )
+                return False
+        except Exception as e:
+            self.connection_error = True
+            print(f"健康检查异常: {str(e)}")
+            self.add_message(
+                f"无法发送消息：连接失败 ({str(e)})", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
+            return False
         
     def upload_file(self):
         """打开文件上传对话框"""
@@ -924,10 +926,14 @@ class OnlineChatWidget(QWidget):
         # 构造文件消息内容
         file_message = f"📎 {filename}\n大小: {config.format_file_size(file_size)}"
         
-        if self.offline_mode:
-            # 离线模式下直接显示文件消息
-            timestamp = datetime.now().strftime("%H:%M")
-            self.add_message(file_message, is_user=True, sender_name=self.current_user, timestamp=timestamp)
+        if self.connection_error:
+            # 连接断开时提示错误
+            self.add_message(
+                "无法上传文件：服务器连接已断开", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
         else:
             # 在线模式通过API发送文件消息
             self.api.send_message(file_message, message_type="file", file_info=file_info)
@@ -942,6 +948,42 @@ class OnlineChatWidget(QWidget):
         
         # 重新加载数据
         self.load_initial_data()
+        
+    def reset_connection(self):
+        """重置连接状态并重新连接"""
+        print(f"重置连接前状态: connection_error={self.connection_error}")
+        
+        # 停止心跳
+        if self.heartbeat_timer.isActive():
+            self.heartbeat_timer.stop()
+        
+        # 重置连接状态
+        self.connection_error = False
+        
+        # 显示重连中状态
+        self.status_label.setText("正在重连...")
+        self.online_count_label.setText("重连中...")
+        self.online_count_label.setStyleSheet("""
+            QLabel {
+                color: #f39c12;
+                background-color: #fef9e7;
+                padding: 5px 10px;
+                border-radius: 15px;
+            }
+        """)
+        
+        # 添加重连提示
+        self.add_message(
+            "正在尝试重新连接服务器...", 
+            is_user=False, 
+            sender_name="系统", 
+            timestamp=datetime.now().strftime("%H:%M")
+        )
+        
+        # 延迟500ms后开始重连
+        QTimer.singleShot(500, self.check_server_connection)
+        
+        print(f"重置连接后状态: connection_error={self.connection_error}")
         
     def clear_messages(self):
         """清空消息"""
@@ -1023,6 +1065,9 @@ class OnlineChatWidget(QWidget):
         self.input.setEnabled(True)
         self.send_btn.setEnabled(True)
         
+        # 消息发送成功说明连接正常
+        self.connection_error = False
+        
         # 添加消息到界面
         content = message_data.get('content', '')
         sender_name = message_data.get('sender_name', self.current_user)
@@ -1043,6 +1088,7 @@ class OnlineChatWidget(QWidget):
     def on_messages_loaded(self, messages):
         """消息加载完成处理"""
         self.loading_indicator.hide()
+        self.connection_error = False  # 成功加载说明连接正常
         self.status_label.setText("已连接")
         
         # 添加消息到界面
@@ -1072,9 +1118,20 @@ class OnlineChatWidget(QWidget):
         # 清空当前用户列表
         self.clear_online_users()
         
+        # 成功加载用户列表说明连接正常
+        self.connection_error = False
+        
         # 更新在线用户数量
         user_count = len(users)
         self.online_count_label.setText(f"在线: {user_count}")
+        self.online_count_label.setStyleSheet("""
+            QLabel {
+                color: #2ecc71;
+                background-color: #e8f5e8;
+                padding: 5px 10px;
+                border-radius: 15px;
+            }
+        """)
         
         # 添加用户到列表
         for user in users:
@@ -1085,10 +1142,27 @@ class OnlineChatWidget(QWidget):
         self.loading_indicator.hide()
         self.input.setEnabled(True)
         self.send_btn.setEnabled(True)
+        
+        # 设置连接错误状态
+        self.connection_error = True
         self.status_label.setText("连接错误")
+        self.online_count_label.setText("连接异常")
+        self.online_count_label.setStyleSheet("""
+            QLabel {
+                color: #e74c3c;
+                background-color: #fdeaea;
+                padding: 5px 10px;
+                border-radius: 15px;
+            }
+        """)
         
         # 显示错误消息
-        QMessageBox.warning(self, "错误", error_message)
+        self.add_message(
+            f"API调用失败: {error_message}", 
+            is_user=False, 
+            sender_name="系统", 
+            timestamp=datetime.now().strftime("%H:%M")
+        )
         
     # 窗口事件处理
     def paintEvent(self, event):
