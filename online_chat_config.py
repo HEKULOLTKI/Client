@@ -36,6 +36,8 @@ NETWORK_PLANNING_DESIGNER_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "network_
 NETWORK_PLANNING_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "Network_Planning_and_Management_Engineer.jpg")
 # 系统架构师对应 system_architect
 SYSTEM_ARCHITECT_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "system_architect.jpg")
+# 系统分析师对应 systems_analyst
+SYSTEMS_ANALYST_AVATAR = os.path.join(ENGINEER_AVATARS_PATH, "Systems_Analyst.png")
 
 # 默认头像配置
 DEFAULT_USER_AVATAR = SYSTEM_ARCHITECT_AVATAR
@@ -115,7 +117,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 def get_avatar_path(avatar_type='user'):
     """
     获取头像路径
-    avatar_type: 'user', 'online_user', 'system', 'network_engineer', 'network_planning', 'system_architect'
+    avatar_type: 'user', 'online_user', 'system', 'network_engineer', 'network_planning', 'system_architect', 'systems_analyst'
     """
     avatar_map = {
         'user': DEFAULT_USER_AVATAR,
@@ -124,7 +126,8 @@ def get_avatar_path(avatar_type='user'):
         # 按职业类型分配头像
         'network_engineer': NETWORK_PLANNING_DESIGNER_AVATAR,     # 网络规划设计师
         'network_planning': NETWORK_PLANNING_AVATAR,             # 系统规划与管理师
-        'system_architect': SYSTEM_ARCHITECT_AVATAR              # 系统架构师
+        'system_architect': SYSTEM_ARCHITECT_AVATAR,             # 系统架构师
+        'systems_analyst': SYSTEMS_ANALYST_AVATAR                # 系统分析师
     }
     
     avatar_path = avatar_map.get(avatar_type, DEFAULT_USER_AVATAR)
@@ -137,7 +140,8 @@ def get_avatar_path(avatar_type='user'):
             'system': FALLBACK_ONLINE_USER_AVATAR,
             'network_engineer': FALLBACK_ONLINE_USER_AVATAR,
             'network_planning': FALLBACK_ONLINE_USER_AVATAR,
-            'system_architect': FALLBACK_USER_AVATAR
+            'system_architect': FALLBACK_USER_AVATAR,
+            'systems_analyst': FALLBACK_USER_AVATAR
         }
         return fallback_map.get(avatar_type, FALLBACK_USER_AVATAR)
     
@@ -153,14 +157,17 @@ def get_avatar_by_profession(profession_name):
         '网络规划设计师': 'network_engineer',
         '系统规划与管理师': 'network_planning', 
         '系统架构师': 'system_architect',
+        '系统分析师': 'systems_analyst',
         # 英文职业代码映射
         'network_engineer': 'network_engineer',
         'network_planning': 'network_planning',
         'system_architect': 'system_architect',
+        'systems_analyst': 'systems_analyst',
         # 兼容性别名
         '网络工程师': 'network_engineer',
         '规划管理师': 'network_planning',
-        '架构师': 'system_architect'
+        '架构师': 'system_architect',
+        '分析师': 'systems_analyst'
     }
     
     avatar_type = profession_avatar_map.get(profession_name, 'online_user')

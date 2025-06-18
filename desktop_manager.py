@@ -3086,7 +3086,8 @@ class DesktopManager(QWidget):
         role_image_mapping = {
             "网络工程师": "network_engineer.jpg",
             "系统架构师": "system_architect.jpg", 
-            "系统规划与管理师": "Network_Planning_and_Management_Engineer.jpg"
+            "系统规划与管理师": "Network_Planning_and_Management_Engineer.jpg",
+            "系统分析师": "Systems_Analyst.png"
         }
         
         image_filename = role_image_mapping.get(role_name, "network_engineer.jpg")  # 默认使用网络工程师图片
@@ -3466,7 +3467,7 @@ class DesktopManager(QWidget):
         return f"#{lightened[0]:02x}{lightened[1]:02x}{lightened[2]:02x}"
         
     def setup_timer(self):
-        """设置定时器"""
+        """设置定时器 - 增强版：支持自动API刷新"""
         try:
             print("⏱️ 开始设置定时器...")
             
@@ -3476,11 +3477,17 @@ class DesktopManager(QWidget):
             self.task_timer.start(3000)  # 每3秒更新（用于任务滚动）
             print("✅ 任务显示更新定时器已启动 (3秒间隔)")
             
-            # 任务数据刷新定时器
+            # 任务数据刷新定时器 - 减少刷新间隔以便更及时获取状态更新
             self.task_refresh_timer = QTimer()
             self.task_refresh_timer.timeout.connect(self.refresh_task_data)
-            self.task_refresh_timer.start(30000)  # 每30秒刷新任务数据
-            print("✅ 任务数据刷新定时器已启动 (30秒间隔)")
+            self.task_refresh_timer.start(15000)  # 每15秒刷新任务数据（原来是30秒）
+            print("✅ 任务数据刷新定时器已启动 (15秒间隔)")
+            
+            # 新增：API状态检查定时器 - 用于定期检查API连接状态
+            self.api_check_timer = QTimer()
+            self.api_check_timer.timeout.connect(self.check_api_status)
+            self.api_check_timer.start(60000)  # 每60秒检查一次API状态
+            print("✅ API状态检查定时器已启动 (60秒间隔)")
             
             # 初始化任务显示
             print("🚀 初始化任务显示...")
@@ -3512,7 +3519,7 @@ class DesktopManager(QWidget):
         self.move(x, y)
         
     def refresh_task_data(self):
-        """刷新任务数据"""
+        """刷新任务数据 - 增强版：优先通过API获取，失败时从本地文件获取"""
         try:
             print(f"🔄 开始刷新任务数据...")
             
@@ -3521,15 +3528,30 @@ class DesktopManager(QWidget):
                 self.current_tasks = []
             if not hasattr(self, 'current_task_index'):
                 self.current_task_index = 0
-                
-            tasks = self.load_received_tasks()
-            if tasks:
-                self.current_tasks = tasks
-                self.current_task_index = 0  # 重置索引
-                print(f"✅ 任务数据已刷新，共 {len(tasks)} 个任务")
+            
+            # 尝试从API获取任务数据
+            api_tasks = self.fetch_tasks_from_api()
+            
+            if api_tasks:
+                # API获取成功，使用API数据
+                self.current_tasks = api_tasks
+                self.current_task_index = 0
+                print(f"✅ 通过API成功获取 {len(api_tasks)} 个任务")
+                # 保存到本地缓存
+                self.save_tasks_to_cache(api_tasks)
+                return
+            
+            # API获取失败，尝试从本地文件获取
+            print("⚠️ API获取失败，尝试从本地文件获取任务...")
+            local_tasks = self.load_received_tasks()
+            
+            if local_tasks:
+                self.current_tasks = local_tasks
+                self.current_task_index = 0
+                print(f"✅ 从本地文件获取 {len(local_tasks)} 个任务")
             else:
                 self.current_tasks = []
-                print("⚠️ 未找到任务数据，清空当前任务")
+                print("⚠️ 本地文件也无任务数据，清空当前任务")
                 
         except Exception as e:
             print(f"❌ 刷新任务数据失败: {str(e)}")
@@ -3543,6 +3565,150 @@ class DesktopManager(QWidget):
                 self.current_task_index = 0
             else:
                 self.current_tasks = []
+    
+    def fetch_tasks_from_api(self):
+        """从API获取任务数据"""
+        try:
+            print("🌐 开始从API获取任务数据...")
+            
+            # 首先尝试从用户信息获取认证信息
+            user_info = self.get_user_info_for_api()
+            if not user_info:
+                print("❌ 无法获取用户认证信息")
+                return None
+            
+            # 创建API客户端并认证
+            api_client = APIClient()
+            username = user_info.get('username')
+            password = user_info.get('password')
+            user_type = user_info.get('type', '操作员')
+            operator_type = user_info.get('operator_type')
+            
+            print(f"🔐 尝试认证用户: {username} ({user_type})")
+            
+            if not api_client.authenticate(username, password, user_type, operator_type):
+                print("❌ API认证失败")
+                return None
+            
+            print("✅ API认证成功，获取任务列表...")
+            
+            # 获取当前用户的任务
+            api_tasks = api_client.get_my_tasks()
+            
+            if not api_tasks:
+                print("⚠️ API返回空任务列表")
+                return []
+            
+            # 转换API任务格式为内部格式
+            converted_tasks = []
+            for task in api_tasks:
+                converted_task = self._convert_api_task_to_internal_format(task)
+                if converted_task:
+                    converted_tasks.append(converted_task)
+            
+            print(f"✅ 成功转换 {len(converted_tasks)} 个API任务")
+            return converted_tasks
+            
+        except Exception as e:
+            print(f"❌ 从API获取任务失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def get_user_info_for_api(self):
+        """获取用于API认证的用户信息"""
+        try:
+            # 方法1：从received_data.json获取用户信息
+            data_file_path = os.path.join(os.getcwd(), 'received_data.json')
+            if os.path.exists(data_file_path):
+                with open(data_file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                # 检查是否是用户数据同步格式
+                if data.get('action') == 'user_data_sync':
+                    sync_info = data.get('sync_info', {})
+                    users = data.get('users', [])
+                    
+                    if users:
+                        user = users[0]  # 使用第一个用户
+                        return {
+                            'username': user.get('username'),
+                            'password': user.get('password'),
+                            'type': user.get('type', '操作员'),
+                            'operator_type': user.get('operator_type')
+                        }
+                
+                # 检查是否是任务分配格式
+                elif data.get('action') == 'task_deployment':
+                    deployment_info = data.get('deployment_info', {})
+                    operator = deployment_info.get('operator', {})
+                    
+                    # 尝试从operator信息中获取
+                    if operator.get('username'):
+                        return {
+                            'username': operator.get('username'),
+                            'password': None,  # 任务分配格式可能不包含密码
+                            'type': operator.get('operator_type', '操作员'),
+                            'operator_type': operator.get('operator_type')
+                        }
+            
+            # 方法2：从received_tasks.json获取用户信息
+            task_file_path = os.path.join(os.getcwd(), 'received_tasks.json')
+            if os.path.exists(task_file_path):
+                with open(task_file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                user_info = data.get('user_info', {})
+                if user_info:
+                    user_data = user_info.get('user', {})
+                    if user_data.get('username'):
+                        return {
+                            'username': user_data.get('username'),
+                            'password': user_data.get('password'),
+                            'type': user_data.get('type', '操作员'),
+                            'operator_type': user_data.get('operator_type')
+                        }
+            
+            # 方法3：使用默认配置（如果有的话）
+            if hasattr(config, 'DEFAULT_USER'):
+                return {
+                    'username': config.DEFAULT_USER.get('username'),
+                    'password': config.DEFAULT_USER.get('password'),
+                    'type': config.DEFAULT_USER.get('type', '操作员'),
+                    'operator_type': config.DEFAULT_USER.get('operator_type')
+                }
+            
+            print("⚠️ 无法获取用户认证信息")
+            return None
+            
+        except Exception as e:
+            print(f"❌ 获取用户信息失败: {str(e)}")
+            return None
+    
+    def save_tasks_to_cache(self, tasks):
+        """保存任务到本地缓存"""
+        try:
+            cache_data = {
+                'action': 'api_task_cache',
+                'cached_at': datetime.now().isoformat(),
+                'tasks': tasks,
+                'user_info': {
+                    'source': 'api',
+                    'cached_time': datetime.now().isoformat()
+                },
+                'data_source': 'api_cache',
+                'original_format': 'api_response',
+                'validation_passed': True
+            }
+            
+            cache_file_path = os.path.join(os.getcwd(), 'received_tasks.json')
+            with open(cache_file_path, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ 任务已缓存到本地文件: {cache_file_path}")
+            
+        except Exception as e:
+            print(f"❌ 保存任务缓存失败: {str(e)}")
     
     def update_task_display(self):
         """更新任务显示"""
@@ -3630,9 +3796,14 @@ class DesktopManager(QWidget):
                 print(f"❌ 安全回退也失败: {str(fallback_error)}")
     
     def on_task_display_clicked(self, event):
-        """点击任务显示区域的处理函数"""
+        """点击任务显示区域的处理函数 - 增强版：支持右键菜单"""
         try:
             print("🖱️ 点击任务显示区域")
+            
+            # 检查是否是右键点击
+            if event.button() == Qt.RightButton:
+                self.show_task_context_menu(event.globalPos())
+                return
             
             # 检查任务数据属性
             if not hasattr(self, 'current_tasks'):
@@ -3662,6 +3833,79 @@ class DesktopManager(QWidget):
             print(f"❌ 处理任务显示点击事件失败: {str(e)}")
             import traceback
             traceback.print_exc()
+    
+    def show_task_context_menu(self, position):
+        """显示任务显示区域的右键菜单"""
+        try:
+            from PyQt5.QtWidgets import QMenu, QAction
+            
+            menu = QMenu(self)
+            
+            # 刷新任务action
+            refresh_action = QAction("🔄 强制刷新任务", self)
+            refresh_action.triggered.connect(self.force_refresh_from_api)
+            menu.addAction(refresh_action)
+            
+            # 检查API状态action
+            check_api_action = QAction("🔍 检查API状态", self)
+            check_api_action.triggered.connect(self.check_api_status)
+            menu.addAction(check_api_action)
+            
+            menu.addSeparator()
+            
+            # 查看所有任务action
+            view_all_action = QAction("📋 查看所有任务", self)
+            view_all_action.triggered.connect(self.submit_tasks)
+            menu.addAction(view_all_action)
+            
+            # 任务统计action
+            if hasattr(self, 'current_tasks') and self.current_tasks:
+                stats_action = QAction("📊 任务统计", self)
+                stats_action.triggered.connect(self.show_task_stats)
+                menu.addAction(stats_action)
+            
+            # 显示菜单
+            menu.exec_(position)
+            
+        except Exception as e:
+            print(f"❌ 显示右键菜单失败: {str(e)}")
+    
+    def show_task_stats(self):
+        """显示任务统计信息"""
+        try:
+            if not hasattr(self, 'current_tasks') or not self.current_tasks:
+                QMessageBox.information(self, "任务统计", "当前没有任务数据")
+                return
+            
+            # 统计各种状态的任务
+            status_count = {}
+            total_progress = 0
+            
+            for task in self.current_tasks:
+                status = task.get('status', task.get('assignment_status', '未知状态'))
+                status_count[status] = status_count.get(status, 0) + 1
+                progress = task.get('progress', task.get('completion_percentage', 0))
+                total_progress += progress
+            
+            avg_progress = total_progress / len(self.current_tasks) if self.current_tasks else 0
+            
+            # 构建统计信息
+            stats_text = f"""任务统计信息：
+
+总任务数：{len(self.current_tasks)}
+平均进度：{avg_progress:.1f}%
+
+任务状态分布："""
+            
+            for status, count in status_count.items():
+                percentage = (count / len(self.current_tasks)) * 100
+                stats_text += f"\n  {status}：{count} 个 ({percentage:.1f}%)"
+            
+            QMessageBox.information(self, "任务统计", stats_text)
+            
+        except Exception as e:
+            print(f"❌ 显示任务统计失败: {str(e)}")
+            QMessageBox.warning(self, "错误", f"显示任务统计失败：{str(e)}")
     
     def show_single_task_detail(self, task):
         """显示单个任务的详情"""
@@ -4259,12 +4503,88 @@ class DesktopManager(QWidget):
         
     @pyqtSlot(str) 
     def on_task_completed(self, message):
-        """任务完成回调"""
+        """任务完成回调 - 增强版：任务提交后自动刷新状态"""
         print(f"任务完成: {message}")
         
         # 显示完成对话框
         QMessageBox.information(self, "任务提交完成", message)
         
+        # 自动刷新任务数据和显示
+        print("🔄 任务提交完成，自动刷新任务状态...")
+        QTimer.singleShot(1000, self.refresh_and_update_tasks)  # 1秒后刷新，确保后端状态已更新
+    
+    def refresh_and_update_tasks(self):
+        """刷新并更新任务显示"""
+        try:
+            print("🔄 开始刷新并更新任务显示...")
+            
+            # 刷新任务数据
+            self.refresh_task_data()
+            
+            # 更新任务显示
+            self.update_task_display()
+            
+            print("✅ 任务状态刷新完成")
+            
+        except Exception as e:
+            print(f"❌ 刷新任务状态失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def check_api_status(self):
+        """检查API连接状态"""
+        try:
+            print("🔍 检查API连接状态...")
+            
+            # 获取用户信息
+            user_info = self.get_user_info_for_api()
+            if not user_info or not user_info.get('username'):
+                print("⚠️ 没有用户认证信息，跳过API状态检查")
+                return
+            
+            # 创建API客户端并尝试认证
+            api_client = APIClient()
+            username = user_info.get('username')
+            password = user_info.get('password')
+            
+            if password:  # 只有在有密码的情况下才进行认证检查
+                try:
+                    if api_client.authenticate(username, password, user_info.get('type'), user_info.get('operator_type')):
+                        print("✅ API连接正常")
+                        # 可以在此处更新UI状态指示器（如果有的话）
+                    else:
+                        print("⚠️ API认证失败")
+                except Exception as auth_error:
+                    print(f"⚠️ API连接检查失败: {str(auth_error)}")
+            else:
+                print("⚠️ 没有密码信息，无法进行完整的API状态检查")
+                
+        except Exception as e:
+            print(f"❌ API状态检查异常: {str(e)}")
+    
+    def force_refresh_from_api(self):
+        """强制从API刷新任务（用于手动刷新）"""
+        try:
+            print("🔄 强制从API刷新任务数据...")
+            
+            # 临时禁用定时器以避免冲突
+            self.task_refresh_timer.stop()
+            
+            # 执行刷新
+            self.refresh_task_data()
+            self.update_task_display()
+            
+            # 重新启动定时器
+            self.task_refresh_timer.start(15000)
+            
+            print("✅ 强制刷新完成")
+            
+        except Exception as e:
+            print(f"❌ 强制刷新失败: {str(e)}")
+            # 确保定时器重新启动
+            if hasattr(self, 'task_refresh_timer'):
+                self.task_refresh_timer.start(15000)
+    
     @pyqtSlot(str)
     def on_task_error(self, error_message):
         """任务错误回调"""
