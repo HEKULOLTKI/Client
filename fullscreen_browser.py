@@ -56,6 +56,7 @@ class ProcessMonitor(QThread):
 class APIServer(QObject):
     # 定义信号用于跨线程通信
     close_fullscreen_signal = pyqtSignal()
+    open_digital_twin_signal = pyqtSignal(str)  # 新增信号，传递孪生平台URL
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -103,8 +104,16 @@ class APIServer(QObject):
                 # 这里可以处理接收到的JSON数据
                 print(f"接收到JSON数据: {json.dumps(json_data, ensure_ascii=False, indent=2)}")
                 
+                # 检查是否是数字孪生平台数据
+                digital_twin_url = self.extract_digital_twin_url(json_data)
+                if digital_twin_url:
+                    print(f"检测到数字孪生平台数据，准备打开孪生平台网页: {digital_twin_url}")
+                    
+                    # 发射信号通知主线程打开孪生平台
+                    self.open_digital_twin_signal.emit(digital_twin_url)
+                    
                 # 检查是否是特定的用户角色选择数据
-                if self.is_role_selection_data(json_data):
+                elif self.is_role_selection_data(json_data):
                     print("检测到角色选择数据，准备关闭全屏网页...")
                     
                     # 提取并存储任务数据和用户信息
@@ -137,6 +146,93 @@ class APIServer(QObject):
                 'status': 'success'
             })
     
+    def extract_digital_twin_url(self, data):
+        """检测并提取数字孪生平台的访问地址"""
+        try:
+            # 递归搜索JSON数据中的数字孪生平台信息
+            def search_digital_twin(obj, path=""):
+                if isinstance(obj, dict):
+                    for key, value in obj.items():
+                        current_path = f"{path}.{key}" if path else key
+                        
+                        # 检查是否包含数字孪生平台的描述
+                        if key == "description" and isinstance(value, str):
+                            if "数字孪生平台系统访问地址" in value:
+                                print(f"✅ 找到数字孪生平台描述: {value}")
+                                # 在同一级别或附近寻找URL
+                                parent_obj = obj
+                                return self.find_url_in_object(parent_obj, current_path)
+                        
+                        # 递归搜索子对象
+                        result = search_digital_twin(value, current_path)
+                        if result:
+                            return result
+                            
+                elif isinstance(obj, list):
+                    for i, item in enumerate(obj):
+                        current_path = f"{path}[{i}]" if path else f"[{i}]"
+                        result = search_digital_twin(item, current_path)
+                        if result:
+                            return result
+                
+                return None
+            
+            url = search_digital_twin(data)
+            if url:
+                print(f"🔗 提取到数字孪生平台URL: {url}")
+                return url
+            else:
+                print("❌ 未找到数字孪生平台的访问地址")
+                return None
+                
+        except Exception as e:
+            print(f"❌ 提取数字孪生平台URL时出错: {str(e)}")
+            return None
+    
+    def find_url_in_object(self, obj, description_path):
+        """在对象中查找URL字段"""
+        if not isinstance(obj, dict):
+            return None
+        
+        # 常见的URL字段名
+        url_fields = ['url', 'link', 'address', 'href', 'endpoint', 'access_url', 'web_url', 'system_url']
+        
+        # 优先在同一个对象中查找URL
+        for field in url_fields:
+            if field in obj and isinstance(obj[field], str):
+                url = obj[field].strip()
+                if self.is_valid_url(url):
+                    print(f"🔗 在字段 '{field}' 中找到URL: {url}")
+                    return url
+        
+        # 如果没找到，尝试查找value字段或其他可能包含URL的字段
+        for key, value in obj.items():
+            if isinstance(value, str) and self.is_valid_url(value.strip()):
+                print(f"🔗 在字段 '{key}' 中找到URL: {value.strip()}")
+                return value.strip()
+        
+        return None
+    
+    def is_valid_url(self, url_string):
+        """检查字符串是否是有效的URL"""
+        if not url_string:
+            return False
+        
+        # 基本的URL格式检查
+        url_string = url_string.strip()
+        
+        # 检查是否以http或https开头
+        if url_string.startswith(('http://', 'https://')):
+            # 简单检查是否包含域名或IP地址
+            if '.' in url_string or 'localhost' in url_string or '127.0.0.1' in url_string:
+                return True
+        
+        # 检查是否是IP地址开头的URL（可能没有协议前缀）
+        if url_string.startswith(('192.168.', '10.', '172.', '127.0.0.1', 'localhost')):
+            return True
+        
+        return False
+
     def extract_and_store_data(self, data):
         """提取并存储任务数据和用户信息"""
         try:
@@ -396,6 +492,8 @@ class FullscreenBrowser(QMainWindow):
             self.api_server = APIServer()
             # 连接关闭全屏信号
             self.api_server.close_fullscreen_signal.connect(self.close_fullscreen)
+            # 连接打开数字孪生平台信号
+            self.api_server.open_digital_twin_signal.connect(self.open_digital_twin_platform)
             
             self.api_thread = threading.Thread(target=self.api_server.run, daemon=True)
             self.api_thread.start()
@@ -477,6 +575,40 @@ class FullscreenBrowser(QMainWindow):
             self.process_monitor.stop()
             self.process_monitor = None
     
+    def open_digital_twin_platform(self, url):
+        """打开数字孪生平台（线程安全）"""
+        print(f"🚀 准备打开数字孪生平台: {url}")
+        # 使用QTimer.singleShot确保在主线程中执行UI操作
+        QTimer.singleShot(0, lambda: self._open_digital_twin_platform_impl(url))
+    
+    def _open_digital_twin_platform_impl(self, url):
+        """实际执行打开数字孪生平台的操作"""
+        try:
+            print(f"🌐 正在加载数字孪生平台网页: {url}")
+            
+            # 确保URL有协议前缀
+            if not url.startswith(('http://', 'https://')):
+                if url.startswith(('192.168.', '10.', '172.', '127.0.0.1', 'localhost')):
+                    url = f"http://{url}"
+                else:
+                    url = f"https://{url}"
+            
+            # 加载数字孪生平台网页
+            self.browser.load(QUrl(url))
+            
+            # 确保窗口处于全屏状态
+            if not self.isFullScreen():
+                self.showFullScreen()
+            
+            # 更新窗口标题
+            self.setWindowTitle(f"数字孪生平台 - {url} | API: 8800端口")
+            
+            print(f"✅ 数字孪生平台已加载: {url}")
+            print("🔄 当前网页已切换到数字孪生平台")
+            
+        except Exception as e:
+            print(f"❌ 打开数字孪生平台时出错: {str(e)}")
+
     def close_fullscreen(self):
         """关闭全屏模式（线程安全）"""
         # 使用QTimer.singleShot确保在主线程中执行UI操作
@@ -614,7 +746,9 @@ class FullscreenBrowser(QMainWindow):
             print("API服务器地址: http://localhost:8800")
             print("上传JSON数据: POST http://localhost:8800/upload")
             print("检查API状态: GET http://localhost:8800/status")
-            print("提示：当接收到包含用户角色选择的JSON数据时，将自动退出全屏模式并启动desktop_manager")
+            print("功能提示：")
+            print("  📋 当接收到包含用户角色选择的JSON数据时，将自动退出全屏模式并启动desktop_manager")
+            print("  🌐 当接收到包含'数字孪生平台系统访问地址'的JSON数据时，将自动切换到孪生平台网页")
             print("CORS支持已启用，任何地址的前端都可以发送跨域请求")
             print("键盘快捷键：")
             print("  ESC - 退出程序")

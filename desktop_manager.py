@@ -3229,18 +3229,18 @@ class DesktopManager(QWidget):
         user_info = self.current_role_data.get('user', {})
         
         role_name = selected_role.get('label', '未知角色')
-        role_desc = selected_role.get('description', '无描述')
+        # 改为显示用户名而不是角色描述
+        username = user_info.get('username', '未知用户')
         
         # 更新显示
         self.role_name_label.setText(role_name)
-        self.role_desc_label.setText(role_desc)
+        self.role_desc_label.setText(f"当前用户: {username}")
         
         # 更新头像
         self.update_role_avatar(role_name)
         
         # 更新状态标签
-        if hasattr(self, 'status_label'):
-            self.status_label.setText(f"当前角色: {role_name}")
+        print(f"当前角色: {role_name}, 当前用户: {username}")
             
     def update_role_avatar(self, role_name):
         """更新角色头像"""
@@ -3357,20 +3357,35 @@ class DesktopManager(QWidget):
         task_layout.addWidget(self.task_scroll_label)
         task_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 系统状态
-        self.status_label = QLabel("系统运行正常")
-        self.status_label.setFont(QFont("Microsoft YaHei", 9))
-        self.status_label.setStyleSheet("""
-            QLabel {
-                color: #00d2d3;
-                background: transparent;
-                padding: 2px 8px;
+        # 任务提交按钮
+        self.submit_current_task_button = QPushButton("提交任务")
+        self.submit_current_task_button.setFont(QFont("Microsoft YaHei", 9))
+        self.submit_current_task_button.setStyleSheet("""
+            QPushButton {
+                color: #ffffff;
+                background: #00d2d3;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #00b8b9;
+            }
+            QPushButton:pressed {
+                background: #009a9b;
+            }
+            QPushButton:disabled {
+                background: #666666;
+                color: #999999;
             }
         """)
+        self.submit_current_task_button.clicked.connect(self.submit_current_task)
+        self.submit_current_task_button.setEnabled(False)  # 初始状态禁用
         
         # 添加到布局
         info_layout.addWidget(self.task_display_widget)
-        info_layout.addWidget(self.status_label)
+        info_layout.addWidget(self.submit_current_task_button)
         info_layout.addStretch()
         
         layout.addLayout(info_layout)
@@ -3452,19 +3467,31 @@ class DesktopManager(QWidget):
         
     def setup_timer(self):
         """设置定时器"""
-        # 任务显示更新定时器
-        self.task_timer = QTimer()
-        self.task_timer.timeout.connect(self.update_task_display)
-        self.task_timer.start(3000)  # 每3秒更新（用于任务滚动）
-        
-        # 任务数据刷新定时器
-        self.task_refresh_timer = QTimer()
-        self.task_refresh_timer.timeout.connect(self.refresh_task_data)
-        self.task_refresh_timer.start(30000)  # 每30秒刷新任务数据
-        
-        # 初始化任务显示
-        self.refresh_task_data()
-        self.update_task_display()
+        try:
+            print("⏱️ 开始设置定时器...")
+            
+            # 任务显示更新定时器
+            self.task_timer = QTimer()
+            self.task_timer.timeout.connect(self.update_task_display)
+            self.task_timer.start(3000)  # 每3秒更新（用于任务滚动）
+            print("✅ 任务显示更新定时器已启动 (3秒间隔)")
+            
+            # 任务数据刷新定时器
+            self.task_refresh_timer = QTimer()
+            self.task_refresh_timer.timeout.connect(self.refresh_task_data)
+            self.task_refresh_timer.start(30000)  # 每30秒刷新任务数据
+            print("✅ 任务数据刷新定时器已启动 (30秒间隔)")
+            
+            # 初始化任务显示
+            print("🚀 初始化任务显示...")
+            self.refresh_task_data()
+            self.update_task_display()
+            print("✅ 定时器和任务显示初始化完成")
+            
+        except Exception as e:
+            print(f"❌ 设置定时器失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
         
     def setup_animations(self):
         """设置动画效果"""
@@ -3487,24 +3514,64 @@ class DesktopManager(QWidget):
     def refresh_task_data(self):
         """刷新任务数据"""
         try:
+            print(f"🔄 开始刷新任务数据...")
+            
+            # 检查必要属性是否存在
+            if not hasattr(self, 'current_tasks'):
+                self.current_tasks = []
+            if not hasattr(self, 'current_task_index'):
+                self.current_task_index = 0
+                
             tasks = self.load_received_tasks()
             if tasks:
                 self.current_tasks = tasks
                 self.current_task_index = 0  # 重置索引
-                print(f"📋 任务数据已刷新，共 {len(tasks)} 个任务")
+                print(f"✅ 任务数据已刷新，共 {len(tasks)} 个任务")
             else:
                 self.current_tasks = []
-                print("📋 未找到任务数据")
+                print("⚠️ 未找到任务数据，清空当前任务")
+                
         except Exception as e:
             print(f"❌ 刷新任务数据失败: {str(e)}")
-            self.current_tasks = []
+            import traceback
+            traceback.print_exc()
+            
+            # 确保属性存在，防止后续调用出错
+            if not hasattr(self, 'current_tasks'):
+                self.current_tasks = []
+            if not hasattr(self, 'current_task_index'):
+                self.current_task_index = 0
+            else:
+                self.current_tasks = []
     
     def update_task_display(self):
         """更新任务显示"""
         try:
-            if not self.current_tasks:
-                self.task_scroll_label.setText("暂无任务")
+            print(f"🎯 开始更新任务显示...")
+            
+            # 检查必要的UI控件是否存在
+            if not hasattr(self, 'task_scroll_label'):
+                print("❌ task_scroll_label 控件不存在，跳过更新")
                 return
+            if not hasattr(self, 'submit_current_task_button'):
+                print("❌ submit_current_task_button 控件不存在，跳过更新")
+                return
+                
+            # 检查任务数据
+            if not hasattr(self, 'current_tasks'):
+                print("⚠️ current_tasks 属性不存在，初始化为空列表")
+                self.current_tasks = []
+            if not hasattr(self, 'current_task_index'):
+                print("⚠️ current_task_index 属性不存在，初始化为0")
+                self.current_task_index = 0
+                
+            if not self.current_tasks:
+                print("📋 没有任务数据，显示暂无任务")
+                self.task_scroll_label.setText("暂无任务")
+                self.submit_current_task_button.setEnabled(False)
+                return
+            
+            print(f"📊 当前任务数量: {len(self.current_tasks)}, 当前索引: {self.current_task_index}")
             
             if len(self.current_tasks) == 1:
                 # 只有一个任务，直接显示
@@ -3512,11 +3579,19 @@ class DesktopManager(QWidget):
                 task_name = task.get('name', task.get('task_name', '未命名任务'))
                 task_status = task.get('status', task.get('assignment_status', '未知状态'))
                 display_text = f"📋 {task_name} - {task_status}"
+                
+                print(f"📝 显示单个任务: {display_text}")
                 self.task_scroll_label.setText(display_text)
+                
+                # 根据任务状态决定是否启用提交按钮
+                can_submit = task_status.lower() in ['待分配', '未分配', '进行中', 'pending', 'in_progress']
+                self.submit_current_task_button.setEnabled(can_submit)
+                print(f"🔘 按钮状态: {'启用' if can_submit else '禁用'}")
             else:
                 # 多个任务，轮播显示
                 if self.current_task_index >= len(self.current_tasks):
                     self.current_task_index = 0
+                    print(f"🔄 索引重置为0")
                     
                 task = self.current_tasks[self.current_task_index]
                 task_name = task.get('name', task.get('task_name', '未命名任务'))
@@ -3528,38 +3603,65 @@ class DesktopManager(QWidget):
                 if progress > 0:
                     display_text += f" ({progress}%)"
                 
+                print(f"📝 显示轮播任务: {display_text}")
                 self.task_scroll_label.setText(display_text)
+                
+                # 根据任务状态决定是否启用提交按钮
+                can_submit = task_status.lower() in ['待分配', '未分配', '进行中', 'pending', 'in_progress']
+                self.submit_current_task_button.setEnabled(can_submit)
+                print(f"🔘 按钮状态: {'启用' if can_submit else '禁用'}")
                 
                 # 移动到下一个任务
                 self.current_task_index += 1
+                print(f"➡️ 下次将显示索引: {self.current_task_index}")
                 
         except Exception as e:
             print(f"❌ 更新任务显示失败: {str(e)}")
-            self.task_scroll_label.setText("任务显示异常")
+            import traceback
+            traceback.print_exc()
+            
+            # 安全回退
+            try:
+                if hasattr(self, 'task_scroll_label'):
+                    self.task_scroll_label.setText("任务显示异常")
+                if hasattr(self, 'submit_current_task_button'):
+                    self.submit_current_task_button.setEnabled(False)
+            except Exception as fallback_error:
+                print(f"❌ 安全回退也失败: {str(fallback_error)}")
     
     def on_task_display_clicked(self, event):
         """点击任务显示区域的处理函数"""
         try:
+            print("🖱️ 点击任务显示区域")
+            
+            # 检查任务数据属性
+            if not hasattr(self, 'current_tasks'):
+                print("⚠️ current_tasks 属性不存在，初始化")
+                self.current_tasks = []
+            
             if not self.current_tasks:
                 # 没有任务时，尝试刷新任务数据
+                print("📋 没有任务数据，尝试刷新...")
                 self.refresh_task_data()
                 if not self.current_tasks:
-                    self.status_label.setText("暂无任务数据")
-                    QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+                    print("⚠️ 刷新后仍无任务数据")
                     return
             
             # 如果有任务，打开任务详情
+            print(f"📊 当前有 {len(self.current_tasks)} 个任务")
             if len(self.current_tasks) == 1:
                 # 只有一个任务，直接显示详情
+                print("📄 显示单个任务详情")
                 self.show_single_task_detail(self.current_tasks[0])
             else:
                 # 多个任务，打开任务列表
+                print("📋 打开任务列表")
                 self.submit_tasks()  # 使用现有的任务提交功能
                 
         except Exception as e:
             print(f"❌ 处理任务显示点击事件失败: {str(e)}")
-            self.status_label.setText("任务详情打开失败")
-            QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+            import traceback
+            traceback.print_exc()
     
     def show_single_task_detail(self, task):
         """显示单个任务的详情"""
@@ -3598,10 +3700,10 @@ class DesktopManager(QWidget):
             
         if self.tuopo_widget.isVisible():
             self.tuopo_widget.hide()
-            self.status_label.setText("拓扑图已隐藏")
+            print("拓扑图已隐藏")
         else:
             self.tuopo_widget.show()
-            self.status_label.setText("拓扑图已显示")
+            print("拓扑图已显示")
             
     def show_pet(self):
         """显示/隐藏宠物"""
@@ -3611,10 +3713,10 @@ class DesktopManager(QWidget):
             
         if self.pet_widget.isVisible():
             self.pet_widget.hide()
-            self.status_label.setText("宠物已隐藏")
+            print("宠物已隐藏")
         else:
             self.pet_widget.show()
-            self.status_label.setText("宠物已显示")
+            print("宠物已显示")
             
     def show_chat(self):
         """显示/隐藏在线聊天窗口"""
@@ -3631,14 +3733,41 @@ class DesktopManager(QWidget):
             
         if self.online_chat_widget.isVisible():
             self.online_chat_widget.hide()
-            self.status_label.setText("在线聊天窗口已隐藏")
+            print("在线聊天窗口已隐藏")
         else:
             self.online_chat_widget.show()
-            self.status_label.setText("在线聊天窗口已显示")
+            print("在线聊天窗口已显示")
+            
+    def submit_current_task(self):
+        """提交当前显示的任务"""
+        try:
+            if not self.current_tasks:
+                print("当前没有任务可提交")
+                return
+                
+            # 获取当前显示的任务索引
+            current_display_index = (self.current_task_index - 1) % len(self.current_tasks)
+            if current_display_index < 0:
+                current_display_index = 0
+                
+            current_task = self.current_tasks[current_display_index]
+            
+            # 检查任务状态是否可以提交
+            task_status = current_task.get('status', current_task.get('assignment_status', '')).lower()
+            if task_status not in ['待分配', '未分配', '进行中', 'pending', 'in_progress']:
+                print(f"任务状态为 '{task_status}'，无法提交")
+                return
+                
+            # 提交单个任务
+            selected_tasks = [current_task]
+            self.start_task_submission(selected_tasks)
+            
+        except Exception as e:
+            print(f"❌ 提交当前任务失败: {str(e)}")
             
     def show_settings_action(self):
         """显示设置"""
-        self.status_label.setText("设置功能开发中...")
+        print("设置功能开发中...")
         # TODO: 实现设置界面
         
     def add_device(self):
@@ -3670,38 +3799,29 @@ class DesktopManager(QWidget):
         self.device_worker.error_occurred.connect(self.on_device_error)
         
         # 开始设备添加
-        self.status_label.setText("正在准备添加设备...")
+        print("正在准备添加设备...")
         self.device_worker.start()
         
     @pyqtSlot(str)
     def on_device_progress_updated(self, message):
         """设备添加进度更新回调"""
-        self.status_label.setText(message)
         print(f"设备添加进度: {message}")
         
     @pyqtSlot(str) 
     def on_device_added(self, message):
         """设备添加完成回调"""
-        self.status_label.setText("设备添加成功")
         print(f"设备添加完成: {message}")
         
         # 显示完成对话框
         QMessageBox.information(self, "设备添加成功", message)
         
-        # 2秒后恢复状态显示
-        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
-        
     @pyqtSlot(str)
     def on_device_error(self, error_message):
         """设备添加错误回调"""
-        self.status_label.setText("设备添加失败")
         print(f"设备添加错误: {error_message}")
         
         # 显示错误对话框
         QMessageBox.warning(self, "设备添加失败", error_message)
-        
-        # 2秒后恢复状态显示
-        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
         
     def start_single_device_addition(self, device_data):
         """开始单个设备添加流程"""
@@ -3719,7 +3839,7 @@ class DesktopManager(QWidget):
         self.device_worker.error_occurred.connect(self.on_device_error)
         
         # 开始设备添加
-        self.status_label.setText("正在准备添加设备...")
+        print("正在准备添加设备...")
         self.device_worker.start()
         
     def start_batch_device_addition(self, batch_devices):
@@ -3740,27 +3860,20 @@ class DesktopManager(QWidget):
         self.batch_device_worker.error_occurred.connect(self.on_device_error)
         
         # 开始批量设备添加
-        self.status_label.setText("正在准备批量添加设备...")
+        print("正在准备批量添加设备...")
         self.batch_device_worker.start()
         
     @pyqtSlot(str)
     def on_single_device_added(self, message):
         """单个设备添加完成回调"""
-        self.status_label.setText("设备添加成功")
-        print(f"单个设备添加完成: {message}")
-        
-        # 不显示消息框，只显示简短提示，避免打断用户操作
-        self.status_label.setText("设备添加成功，可继续添加")
-        
-        # 3秒后恢复状态显示
-        QTimer.singleShot(3000, lambda: self.status_label.setText("系统运行正常"))
+        print(f"单个设备添加完成: {message} - 可继续添加")
         
     @pyqtSlot(int, int)
     def on_batch_progress_updated(self, current, total):
         """批量进度更新回调"""
         if self.device_dialog and hasattr(self.device_dialog, 'update_progress'):
             self.device_dialog.update_progress(current, total)
-        self.status_label.setText(f"正在导入设备: {current}/{total}")
+        print(f"正在导入设备: {current}/{total}")
         
     @pyqtSlot(str)
     def on_batch_device_added(self, message):
@@ -3770,7 +3883,6 @@ class DesktopManager(QWidget):
     @pyqtSlot(str)
     def on_batch_completed(self, message):
         """批量设备添加完成回调"""
-        self.status_label.setText("批量添加完成")
         print(f"批量设备添加完成: {message}")
         
         # 隐藏进度条
@@ -3779,9 +3891,6 @@ class DesktopManager(QWidget):
         
         # 显示完成对话框
         QMessageBox.information(self, "批量添加完成", message)
-        
-        # 3秒后恢复状态显示
-        QTimer.singleShot(3000, lambda: self.status_label.setText("系统运行正常"))
         
     def submit_tasks(self):
         """打开任务选择对话框"""
@@ -3795,19 +3904,17 @@ class DesktopManager(QWidget):
             return
             
         # 显示加载状态
-        self.status_label.setText("正在智能获取任务列表...")
+        print("正在智能获取任务列表...")
         
         # 首先检查是否有从前端接收到的任务数据
         received_tasks = self.load_received_tasks()
         if received_tasks:
             print(f"✓ 使用从前端接收到的智能任务数据，共 {len(received_tasks)} 个任务")
-            self.status_label.setText(f"已加载 {len(received_tasks)} 个智能推荐任务")
             # 延迟一下让用户看到状态信息
             QTimer.singleShot(500, lambda: self.on_tasks_loaded(received_tasks))
             return
         
         print("⚠ 未找到前端智能推荐任务，回退到API获取任务列表...")
-        self.status_label.setText("正在从服务器获取任务列表...")
         # 创建任务列表获取工作线程
         self.task_list_worker = TaskListWorker()
         
@@ -3825,6 +3932,9 @@ class DesktopManager(QWidget):
             data_file_path = os.path.join(os.getcwd(), 'received_data.json')
             
             print(f"📂 开始加载任务数据...")
+            print(f"🔍 检查文件路径:")
+            print(f"   - 任务文件: {task_file_path}")
+            print(f"   - 数据文件: {data_file_path}")
             
             # 检查received_tasks.json文件是否存在
             if not os.path.exists(task_file_path):
@@ -4090,7 +4200,7 @@ class DesktopManager(QWidget):
     @pyqtSlot(list)
     def on_tasks_loaded(self, tasks):
         """任务列表加载完成"""
-        self.status_label.setText("系统运行正常")
+        print("系统运行正常")
         
         if not tasks:
             QMessageBox.information(self, "提示", "当前没有任务")
@@ -4124,9 +4234,9 @@ class DesktopManager(QWidget):
     @pyqtSlot(str)
     def on_task_list_error(self, error_message):
         """获取任务列表失败"""
-        self.status_label.setText("获取任务列表失败")
+        print("获取任务列表失败")
         QMessageBox.warning(self, "错误", f"获取任务列表失败：{error_message}")
-        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+        print("系统运行正常")
         
     def start_task_submission(self, selected_tasks):
         """开始提交选中的任务"""
@@ -4139,43 +4249,34 @@ class DesktopManager(QWidget):
         self.task_worker.error_occurred.connect(self.on_task_error)
         
         # 开始任务提交
-        self.status_label.setText("正在准备任务提交...")
+        print("正在准备任务提交...")
         self.task_worker.start()
         
     @pyqtSlot(str)
     def on_task_progress_updated(self, message):
         """任务进度更新回调"""
-        self.status_label.setText(message)
         print(f"任务进度: {message}")
         
     @pyqtSlot(str) 
     def on_task_completed(self, message):
         """任务完成回调"""
-        self.status_label.setText(message)
         print(f"任务完成: {message}")
         
         # 显示完成对话框
         QMessageBox.information(self, "任务提交完成", message)
         
-        # 2秒后恢复状态显示
-        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
-        
     @pyqtSlot(str)
     def on_task_error(self, error_message):
         """任务错误回调"""
-        self.status_label.setText(f"任务提交失败")
-        print(f"任务错误: {error_message}")
+        print(f"任务提交失败: {error_message}")
         
         # 显示错误对话框
         QMessageBox.warning(self, "任务提交失败", error_message)
-        
-        # 2秒后恢复状态显示
-        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
     
     @pyqtSlot(list)
     def on_notification_tasks_loaded(self, tasks):
         """任务通知获取任务列表完成 - 专门用于任务通知"""
-        self.status_label.setText("系统运行正常")
+        print("系统运行正常")
         
         if not tasks:
             print("⚠️ 没有从API获取到任务，显示暂无任务通知")
@@ -4206,15 +4307,11 @@ class DesktopManager(QWidget):
     @pyqtSlot(str)
     def on_notification_task_list_error(self, error_message):
         """任务通知获取任务列表失败 - 专门用于任务通知"""
-        self.status_label.setText("获取任务列表失败")
         print(f"❌ 任务通知获取任务列表失败：{error_message}")
         
         # 显示暂无任务通知，而不是错误弹窗
         print("🔔 因获取任务失败，显示暂无任务通知")
         self.show_no_task_notification()
-        
-        # 2秒后恢复状态显示
-        QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
         
     def exit_application(self):
         """退出应用程序并启动全屏浏览器"""
@@ -4445,13 +4542,13 @@ class DesktopManager(QWidget):
             print(f"   当前工作目录: {os.getcwd()}")
             
             # 显示加载状态
-            self.status_label.setText("正在智能获取任务列表...")
+            print("正在智能获取任务列表...")
             
             # 使用与提交任务相同的获取方式 - 首先检查是否有从前端接收到的任务数据
             received_tasks = self.load_received_tasks()
             if received_tasks:
                 print(f"✓ 使用从前端接收到的智能任务数据，共 {len(received_tasks)} 个任务")
-                self.status_label.setText(f"已加载 {len(received_tasks)} 个智能推荐任务")
+                print(f"已加载 {len(received_tasks)} 个智能推荐任务")
                 
                 # 过滤出待提交的任务 - 使用与提交任务相同的筛选条件
                 pending_status_list = [api_config.TASK_STATUS.get("PENDING", "待分配"), "未分配", "进行中"]
@@ -4476,7 +4573,7 @@ class DesktopManager(QWidget):
                 return
             
             print("⚠ 未找到前端智能推荐任务，回退到API获取任务列表...")
-            self.status_label.setText("正在从服务器获取任务列表...")
+            print("正在从服务器获取任务列表...")
             
             # 创建任务列表获取工作线程 - 与提交任务保持一致
             self.task_list_worker = TaskListWorker()
@@ -4512,18 +4609,19 @@ class DesktopManager(QWidget):
             result = msg_box.exec_()
             print(f"🔔 弹窗已关闭，返回值: {result}")
             
-            self.status_label.setText("暂无待处理任务")
+            print("暂无待处理任务")
         except Exception as e:
             print(f"❌ 显示暂无任务通知时出错: {str(e)}")
             import traceback
             traceback.print_exc()
-            self.status_label.setText("暂无待处理任务")
+            print("暂无待处理任务")
     
 
     
     def show_task_notification(self, all_tasks, pending_tasks):
         """显示任务通知弹窗 - 根据配置决定是否自动打开任务提交对话框"""
         try:
+            print("🔔 开始显示任务通知弹窗...")
             # 获取用户信息用于日志显示
             user_info = None
             try:
@@ -4556,7 +4654,7 @@ class DesktopManager(QWidget):
             if self.auto_open_task_dialog:
                 # 自动打开任务提交对话框
                 print("🚀 自动打开任务提交对话框...")
-                self.status_label.setText(f"发现 {len(pending_tasks)} 个新任务，正在打开任务管理...")
+                print(f"发现 {len(pending_tasks)} 个新任务，正在打开任务管理...")
                 
                 # 标记任务已通知
                 self.mark_tasks_as_notified()
@@ -4566,17 +4664,20 @@ class DesktopManager(QWidget):
             else:
                 # 显示传统的通知弹窗让用户选择
                 print("💡 显示任务通知弹窗，等待用户选择...")
-                self.status_label.setText(f"发现 {len(pending_tasks)} 个新任务")
+                print(f"发现 {len(pending_tasks)} 个新任务")
                 self._show_traditional_notification(all_tasks, pending_tasks, username, role_name)
                 
         except Exception as e:
-            print(f"显示任务通知时出错: {str(e)}")
+            print(f"❌ 显示任务通知时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
             # 如果通知失败，仍然可以通过按钮查看任务
-            self.status_label.setText("有新任务可用")
+            print("有新任务可用")
     
     def _show_traditional_notification(self, all_tasks, pending_tasks, username, role_name):
         """显示传统的任务通知弹窗"""
         try:
+            print("🔔 显示传统任务通知弹窗...")
             # 构建通知消息
             message = f"🎯 智能任务推荐通知\n\n"
             message += f"👤 用户: {username}\n"
@@ -4639,7 +4740,9 @@ class DesktopManager(QWidget):
             """)
             
             # 执行对话框并处理结果
-            msg_box.exec_()
+            print("🔔 弹窗即将显示...")
+            result = msg_box.exec_()
+            print(f"🔔 弹窗已关闭，返回值: {result}")
             
             if msg_box.clickedButton() == view_tasks_btn:
                 print("用户选择查看任务列表")
@@ -4651,13 +4754,13 @@ class DesktopManager(QWidget):
                 print("用户选择稍后处理任务")
                 # 即使选择稍后处理，也标记为已通知，避免重复弹窗
                 self.mark_tasks_as_notified()
-                self.status_label.setText("任务待处理中...")
-                # 3秒后恢复正常状态
-                QTimer.singleShot(3000, lambda: self.status_label.setText("系统运行正常"))
+                print("任务待处理中...")
                 
         except Exception as e:
-            print(f"显示传统任务通知时出错: {str(e)}")
-            self.status_label.setText("有新任务可用")
+            print(f"❌ 显示传统任务通知时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            print("有新任务可用")
 
 
 def main():
