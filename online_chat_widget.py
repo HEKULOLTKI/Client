@@ -3,9 +3,9 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLineEdit, QPushButton,
                            QToolButton, QSizePolicy, QProgressBar, QLayout,
                            QTextEdit, QFileDialog, QApplication, QMessageBox,
                            QDialog, QDialogButtonBox)
-from PyQt5.QtCore import Qt, QPoint, QSize, QTimer, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal, QUrl
+from PyQt5.QtCore import Qt, QPoint, QSize, QTimer, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal, QUrl, QMimeData
 from PyQt5.QtGui import (QFont, QIcon, QPixmap, QPainter, QColor, QPainterPath, 
-                        QPen, QFontMetrics, QDesktopServices, QCursor, QBrush)
+                        QPen, QFontMetrics, QDesktopServices, QCursor, QBrush, QClipboard)
 import requests
 import time
 import json
@@ -14,6 +14,8 @@ import subprocess
 import webbrowser
 import platform
 import mimetypes
+import tempfile
+import uuid
 from datetime import datetime
 import online_chat_config as config
 from token_manager import TokenManager
@@ -287,6 +289,459 @@ class OnlineChatBubble(QFrame):
             layout.addLayout(time_layout)
         else:
             layout.addLayout(msg_layout)
+
+class ImageChatBubble(QFrame):
+    """图片消息气泡组件 - 直接显示图片"""
+    def __init__(self, file_info, is_user=True, sender_name="", timestamp="", profession="", parent=None):
+        super().__init__(parent)
+        self.is_user = is_user
+        self.file_info = file_info
+        self.sender_name = sender_name
+        self.timestamp = timestamp
+        self.profession = profession
+        
+        # 从文件信息中提取数据
+        self.file_name = file_info.get('file_name', '未知图片')
+        self.file_url = file_info.get('file_url', '')
+        self.file_size = file_info.get('file_size', 0)
+        self.content = file_info.get('content', f"🖼️ {self.file_name}")
+        
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
+        self.setStyleSheet("""
+            ImageChatBubble {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        
+        # 图片相关属性
+        self.image_label = None
+        self.loading_label = None
+        self.max_image_width = 300
+        self.max_image_height = 200
+        
+        self.setup_ui()
+        self.load_image()
+        
+    def setup_ui(self):
+        """设置UI界面"""
+        # 主布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+        
+        # 消息信息栏（发送者和时间）
+        if not self.is_user:
+            info_layout = QHBoxLayout()
+            info_layout.setContentsMargins(50, 0, 0, 0)
+            
+            sender_label = QLabel(self.sender_name)
+            sender_label.setFont(QFont("Microsoft YaHei UI", 8))
+            sender_label.setStyleSheet("color: #666666;")
+            
+            time_label = QLabel(self.timestamp)
+            time_label.setFont(QFont("Microsoft YaHei UI", 8))
+            time_label.setStyleSheet("color: #999999;")
+            
+            info_layout.addWidget(sender_label)
+            info_layout.addStretch()
+            info_layout.addWidget(time_label)
+            
+            layout.addLayout(info_layout)
+        
+        # 消息主体布局
+        msg_layout = QHBoxLayout()
+        msg_layout.setContentsMargins(0, 0, 0, 0)
+        msg_layout.setSpacing(10)
+        
+        # 创建图片消息容器
+        image_container = QFrame()
+        image_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        image_container.setStyleSheet(f"""
+            QFrame {{
+                background-color: {'#f8f9fa' if self.is_user else '#f8f9fa'};
+                border: 2px solid {'#2ecc71' if self.is_user else '#dee2e6'};
+                border-radius: 12px;
+                padding: 8px;
+            }}
+        """)
+        
+        container_layout = QVBoxLayout(image_container)
+        container_layout.setContentsMargins(8, 8, 8, 8)
+        container_layout.setSpacing(8)
+        
+        # 图片显示区域
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setStyleSheet("""
+            QLabel {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 8px;
+                padding: 4px;
+            }
+        """)
+        self.image_label.setMinimumSize(150, 100)
+        self.image_label.setMaximumSize(self.max_image_width, self.max_image_height)
+        self.image_label.setScaledContents(False)
+        
+        # 加载提示
+        self.loading_label = QLabel("🔄 正在加载图片...")
+        self.loading_label.setAlignment(Qt.AlignCenter)
+        self.loading_label.setFont(QFont("Microsoft YaHei UI", 9))
+        self.loading_label.setStyleSheet("color: #6c757d;")
+        
+        # 文件信息
+        info_layout = QHBoxLayout()
+        info_layout.setSpacing(8)
+        
+        # 文件名
+        file_name_label = QLabel(self.file_name)
+        file_name_label.setFont(QFont("Microsoft YaHei UI", 9))
+        file_name_label.setStyleSheet("color: #495057; font-weight: bold;")
+        file_name_label.setWordWrap(True)
+        
+        # 文件大小
+        size_text = self.format_file_size(self.file_size)
+        file_size_label = QLabel(size_text)
+        file_size_label.setFont(QFont("Microsoft YaHei UI", 8))
+        file_size_label.setStyleSheet("color: #6c757d;")
+        
+        info_layout.addWidget(file_name_label)
+        info_layout.addStretch()
+        info_layout.addWidget(file_size_label)
+        
+        # 下载按钮
+        download_btn = QPushButton("💾 下载原图")
+        download_btn.setFont(QFont("Microsoft YaHei UI", 8))
+        download_btn.setFixedHeight(25)
+        download_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        download_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {'#28a745' if self.is_user else '#007bff'};
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 4px 12px;
+            }}
+            QPushButton:hover {{
+                background-color: {'#218838' if self.is_user else '#0056b3'};
+            }}
+            QPushButton:pressed {{
+                background-color: {'#1e7e34' if self.is_user else '#004085'};
+            }}
+        """)
+        download_btn.clicked.connect(self.download_image)
+        
+        container_layout.addWidget(self.loading_label)
+        container_layout.addWidget(self.image_label)
+        container_layout.addLayout(info_layout)
+        container_layout.addWidget(download_btn)
+        
+        # 创建头像
+        avatar = QLabel()
+        avatar.setFixedSize(40, 40)
+        if self.is_user:
+            # 当前用户头像：优先根据职业选择，默认使用系统架构师
+            if self.profession:
+                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+            else:
+                avatar_pixmap = QPixmap(config.get_avatar_path('user'))
+        else:
+            # 其他用户头像：优先根据职业选择，默认使用网络规划设计师
+            if self.profession:
+                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+            else:
+                avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+        
+        # 创建圆形遮罩
+        mask = QPixmap(40, 40)
+        mask.fill(Qt.transparent)
+        
+        painter = QPainter(mask)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setBrush(QBrush(Qt.black))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(0, 0, 40, 40)
+        painter.end()
+        
+        # 缩放头像并应用圆形遮罩
+        scaled_pixmap = avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        
+        # 如果图片不是正方形，裁剪到中心
+        if scaled_pixmap.width() != scaled_pixmap.height():
+            size = min(scaled_pixmap.width(), scaled_pixmap.height())
+            x = (scaled_pixmap.width() - size) // 2
+            y = (scaled_pixmap.height() - size) // 2
+            scaled_pixmap = scaled_pixmap.copy(x, y, size, size).scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        
+        # 应用圆形遮罩
+        scaled_pixmap.setMask(mask.createMaskFromColor(Qt.transparent, Qt.MaskInColor))
+        
+        avatar.setPixmap(scaled_pixmap)
+        avatar.setStyleSheet("""
+            QLabel {
+                border-radius: 20px;
+                background-color: white;
+                border: 2px solid #E8E8E8;
+            }
+        """)
+        
+        # 设置最终布局
+        if self.is_user:
+            msg_layout.addStretch(1)  # 左侧弹性空间
+            msg_layout.addWidget(image_container)  # 图片消息气泡
+            msg_layout.addWidget(avatar)  # 头像靠右
+        else:
+            msg_layout.addWidget(avatar)  # 头像靠左
+            msg_layout.addWidget(image_container)  # 图片消息气泡
+            msg_layout.addStretch(1)  # 右侧弹性空间
+        
+        # 用户消息显示时间在右侧
+        if self.is_user and self.timestamp:
+            time_layout = QHBoxLayout()
+            time_layout.setContentsMargins(0, 0, 50, 0)
+            time_layout.addStretch()
+            
+            time_label = QLabel(self.timestamp)
+            time_label.setFont(QFont("Microsoft YaHei UI", 8))
+            time_label.setStyleSheet("color: #999999;")
+            time_layout.addWidget(time_label)
+            
+            layout.addLayout(msg_layout)
+            layout.addLayout(time_layout)
+        else:
+            layout.addLayout(msg_layout)
+    
+    def load_image(self):
+        """加载并显示图片"""
+        if not self.file_url:
+            self.loading_label.setText("❌ 图片链接无效")
+            self.image_label.hide()
+            return
+        
+        # 在新线程中下载图片
+        self.download_thread = ImageDownloadThread(self.file_url, self.get_api_headers())
+        self.download_thread.image_loaded.connect(self.on_image_loaded)
+        self.download_thread.load_failed.connect(self.on_image_load_failed)
+        self.download_thread.start()
+    
+    def get_api_headers(self):
+        """获取API请求头"""
+        # 查找父窗口中的OnlineChatWidget来获取API headers
+        parent_widget = self.parent()
+        while parent_widget:
+            if hasattr(parent_widget, 'api') and parent_widget.api:
+                return parent_widget.api.get_headers()
+            parent_widget = parent_widget.parent()
+        return {}
+    
+    def on_image_loaded(self, pixmap):
+        """图片加载成功"""
+        self.loading_label.hide()
+        
+        # 计算合适的显示尺寸
+        original_size = pixmap.size()
+        scaled_size = self.calculate_display_size(original_size)
+        
+        # 缩放图片
+        scaled_pixmap = pixmap.scaled(
+            scaled_size,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        
+        # 设置图片
+        self.image_label.setPixmap(scaled_pixmap)
+        self.image_label.setFixedSize(scaled_size)
+        self.image_label.show()
+        
+        # 添加点击事件查看大图
+        self.image_label.mousePressEvent = lambda event: self.show_full_image(pixmap)
+        self.image_label.setCursor(QCursor(Qt.PointingHandCursor))
+        
+        print(f"✅ 图片加载成功: {self.file_name}")
+    
+    def on_image_load_failed(self, error_msg):
+        """图片加载失败"""
+        self.loading_label.setText(f"❌ 图片加载失败: {error_msg}")
+        self.image_label.hide()
+        print(f"❌ 图片加载失败: {self.file_name} - {error_msg}")
+    
+    def calculate_display_size(self, original_size):
+        """计算适合显示的图片尺寸"""
+        width = original_size.width()
+        height = original_size.height()
+        
+        # 如果图片小于最大尺寸，保持原尺寸
+        if width <= self.max_image_width and height <= self.max_image_height:
+            return original_size
+        
+        # 按比例缩放
+        width_ratio = self.max_image_width / width
+        height_ratio = self.max_image_height / height
+        scale_ratio = min(width_ratio, height_ratio)
+        
+        new_width = int(width * scale_ratio)
+        new_height = int(height * scale_ratio)
+        
+        return QSize(new_width, new_height)
+    
+    def show_full_image(self, pixmap):
+        """显示大图"""
+        dialog = ImageViewDialog(pixmap, self.file_name, self)
+        dialog.exec_()
+    
+    def download_image(self):
+        """下载图片到本地"""
+        if not self.file_url:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "下载失败", "图片链接不存在")
+            return
+        
+        try:
+            print(f"📥 准备下载图片: {self.file_name}")
+            
+            # 查找父窗口中的OnlineChatWidget
+            parent_widget = self.parent()
+            while parent_widget:
+                if hasattr(parent_widget, 'download_file_from_chat'):
+                    # 找到了OnlineChatWidget，调用其下载方法
+                    parent_widget.download_file_from_chat(self.file_url, self.file_name)
+                    return
+                parent_widget = parent_widget.parent()
+            
+            # 如果找不到父窗口的下载方法，则回退到浏览器下载
+            print("⚠️ 未找到父窗口下载方法，回退到浏览器下载")
+            
+            # 构建完整的文件URL
+            from online_chat_config import CHAT_API_BASE_URL
+            if self.file_url.startswith('http'):
+                full_url = self.file_url
+            else:
+                full_url = f"{CHAT_API_BASE_URL}{self.file_url}"
+            
+            # 使用浏览器打开
+            from PyQt5.QtCore import QUrl
+            from PyQt5.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(full_url))
+            
+        except Exception as e:
+            print(f"❌ 图片下载失败: {str(e)}")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "下载失败", f"图片下载失败：{str(e)}")
+    
+    def format_file_size(self, size_bytes):
+        """格式化文件大小"""
+        if size_bytes == 0:
+            return "0 B"
+        size_names = ["B", "KB", "MB", "GB"]
+        i = 0
+        while size_bytes >= 1024 and i < len(size_names) - 1:
+            size_bytes /= 1024.0
+            i += 1
+        return f"{size_bytes:.1f} {size_names[i]}"
+
+class ImageDownloadThread(QThread):
+    """图片下载线程"""
+    image_loaded = pyqtSignal(QPixmap)
+    load_failed = pyqtSignal(str)
+    
+    def __init__(self, image_url, headers=None):
+        super().__init__()
+        self.image_url = image_url
+        self.headers = headers or {}
+    
+    def run(self):
+        """下载图片"""
+        try:
+            # 构建完整的图片URL
+            from online_chat_config import CHAT_API_BASE_URL
+            if self.image_url.startswith('http'):
+                full_url = self.image_url
+            else:
+                full_url = f"{CHAT_API_BASE_URL}{self.image_url}"
+            
+            print(f"🖼️ 开始下载图片: {full_url}")
+            
+            # 下载图片数据
+            response = requests.get(full_url, headers=self.headers, timeout=10)
+            response.raise_for_status()
+            
+            # 创建QPixmap
+            pixmap = QPixmap()
+            if pixmap.loadFromData(response.content):
+                self.image_loaded.emit(pixmap)
+            else:
+                self.load_failed.emit("图片格式不支持")
+                
+        except requests.exceptions.Timeout:
+            self.load_failed.emit("下载超时")
+        except requests.exceptions.ConnectionError:
+            self.load_failed.emit("网络连接失败")
+        except requests.exceptions.HTTPError as e:
+            self.load_failed.emit(f"HTTP错误: {e.response.status_code}")
+        except Exception as e:
+            self.load_failed.emit(str(e))
+
+class ImageViewDialog(QDialog):
+    """图片查看对话框"""
+    def __init__(self, pixmap, filename, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"查看图片 - {filename}")
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setModal(True)
+        
+        # 计算合适的对话框大小
+        screen = QApplication.primaryScreen().geometry()
+        max_width = int(screen.width() * 0.8)
+        max_height = int(screen.height() * 0.8)
+        
+        # 计算图片显示尺寸
+        img_size = pixmap.size()
+        if img_size.width() > max_width or img_size.height() > max_height:
+            scale_ratio = min(max_width / img_size.width(), max_height / img_size.height())
+            display_size = QSize(int(img_size.width() * scale_ratio), int(img_size.height() * scale_ratio))
+        else:
+            display_size = img_size
+        
+        self.setFixedSize(display_size.width() + 40, display_size.height() + 80)
+        
+        # 布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 图片标签
+        image_label = QLabel()
+        image_label.setAlignment(Qt.AlignCenter)
+        image_label.setPixmap(pixmap.scaled(display_size, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        image_label.setStyleSheet("""
+            QLabel {
+                border: 1px solid #dee2e6;
+                background-color: white;
+            }
+        """)
+        
+        # 关闭按钮
+        close_btn = QPushButton("关闭")
+        close_btn.setFixedHeight(35)
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+        """)
+        
+        layout.addWidget(image_label)
+        layout.addWidget(close_btn)
 
 class FileChatBubble(QFrame):
     """文件消息气泡组件 - 支持点击下载"""
@@ -594,6 +1049,232 @@ class FileChatBubble(QFrame):
             self.download_file()
         super().mousePressEvent(event)
 
+class PasteEnabledLineEdit(QLineEdit):
+    """支持粘贴文件的输入框"""
+    file_pasted = pyqtSignal(list)  # 发送粘贴的文件路径列表
+    image_pasted = pyqtSignal(QPixmap)  # 发送粘贴的图片
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)  # 启用拖拽
+        self.setContextMenuPolicy(Qt.CustomContextMenu)  # 启用自定义右键菜单
+        self.customContextMenuRequested.connect(self.show_context_menu)
+        
+    def keyPressEvent(self, event):
+        """处理按键事件，特别是粘贴操作"""
+        if event.key() == Qt.Key_V and event.modifiers() == Qt.ControlModifier:
+            # Ctrl+V 粘贴
+            try:
+                self.handle_paste()
+                return
+            except Exception as e:
+                print(f"❌ 自定义粘贴处理失败: {e}")
+                # 如果自定义粘贴失败，回退到默认粘贴
+                print("🔄 回退到默认粘贴方法")
+                super().keyPressEvent(event)
+                return
+        
+        # 其他按键事件正常处理
+        super().keyPressEvent(event)
+    
+    def handle_paste(self):
+        """处理粘贴操作"""
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        
+        print(f"📋 剪贴板内容检测: hasUrls={mime_data.hasUrls()}, hasImage={mime_data.hasImage()}, hasText={mime_data.hasText()}")
+        
+        # 优先检查是否有文件路径
+        if mime_data.hasUrls():
+            file_paths = []
+            for url in mime_data.urls():
+                if url.isLocalFile():
+                    file_paths.append(url.toLocalFile())
+            
+            if file_paths:
+                print(f"📋 粘贴文件: {file_paths}")
+                self.file_pasted.emit(file_paths)
+                return
+        
+        # 检查是否有图片数据
+        if mime_data.hasImage():
+            print("📋 检测到剪贴板中有图片数据")
+            
+            # 尝试多种方式获取图片
+            pixmap = None
+            
+            # 方法1：直接从剪贴板获取QPixmap
+            try:
+                pixmap = clipboard.pixmap()
+                if not pixmap.isNull():
+                    print("📋 成功通过pixmap()获取图片")
+                else:
+                    print("📋 pixmap()返回空图片，尝试其他方法")
+                    pixmap = None
+            except Exception as e:
+                print(f"📋 pixmap()方法失败: {e}")
+            
+            # 方法2：从QImage转换
+            if pixmap is None or pixmap.isNull():
+                try:
+                    image = clipboard.image()
+                    if not image.isNull():
+                        pixmap = QPixmap.fromImage(image)
+                        if not pixmap.isNull():
+                            print("📋 成功通过QImage转换获取图片")
+                        else:
+                            print("📋 QImage转换为QPixmap失败")
+                            pixmap = None
+                    else:
+                        print("📋 clipboard.image()返回空图片")
+                except Exception as e:
+                    print(f"📋 QImage转换方法失败: {e}")
+            
+            # 如果成功获取图片，发送信号
+            if pixmap and not pixmap.isNull():
+                print(f"📋 图片尺寸: {pixmap.width()}x{pixmap.height()}")
+                self.image_pasted.emit(pixmap)
+                return
+            else:
+                print("⚠️ 所有图片获取方法都失败了")
+        
+        # 检查是否有文本（可能是文件路径）
+        if mime_data.hasText():
+            text = mime_data.text().strip()
+            print(f"📋 检测到文本内容: {text[:100]}...")  # 只显示前100个字符
+            
+            # 检查是否是文件路径
+            if os.path.exists(text) and os.path.isfile(text):
+                print(f"📋 识别为文件路径: {text}")
+                self.file_pasted.emit([text])
+                return
+            else:
+                print("📋 文本不是有效文件路径，执行普通文本粘贴")
+        
+        # 如果都不是，执行正常的文本粘贴
+        print("📋 执行默认文本粘贴")
+        try:
+            self.paste()  # 使用Qt的粘贴方法
+        except Exception as e:
+            print(f"❌ 默认粘贴也失败了: {e}")
+            # 最后的备用方案
+            try:
+                clipboard = QApplication.clipboard()
+                if clipboard.mimeData().hasText():
+                    text = clipboard.text()
+                    self.insert(text)
+                    print("✅ 使用insert方法成功粘贴文本")
+            except Exception as e2:
+                print(f"❌ 所有粘贴方法都失败了: {e2}")
+    
+    def show_context_menu(self, position):
+        """显示右键菜单"""
+        from PyQt5.QtWidgets import QMenu, QAction
+        
+        menu = QMenu(self)
+        
+        # 添加标准菜单项
+        paste_action = QAction("粘贴", self)
+        paste_action.triggered.connect(self.handle_paste)
+        menu.addAction(paste_action)
+        
+        paste_text_action = QAction("粘贴文本", self)
+        paste_text_action.triggered.connect(self.paste_text_only)
+        menu.addAction(paste_text_action)
+        
+        # 检查剪贴板内容
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        
+        if mime_data.hasImage():
+            paste_image_action = QAction("粘贴图片", self)
+            paste_image_action.triggered.connect(self.paste_image_only)
+            menu.addAction(paste_image_action)
+        
+        if mime_data.hasUrls():
+            paste_file_action = QAction("粘贴文件", self)
+            paste_file_action.triggered.connect(self.paste_files_only)
+            menu.addAction(paste_file_action)
+        
+        menu.exec_(self.mapToGlobal(position))
+    
+    def paste_text_only(self):
+        """只粘贴文本内容"""
+        clipboard = QApplication.clipboard()
+        if clipboard.mimeData().hasText():
+            try:
+                self.paste()
+                print("✅ 强制文本粘贴成功")
+            except Exception as e:
+                print(f"❌ 强制文本粘贴失败: {e}")
+    
+    def paste_image_only(self):
+        """只粘贴图片内容"""
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        
+        if mime_data.hasImage():
+            print("📋 强制图片粘贴")
+            
+            # 尝试获取图片
+            pixmap = None
+            try:
+                pixmap = clipboard.pixmap()
+                if pixmap.isNull():
+                    image = clipboard.image()
+                    if not image.isNull():
+                        pixmap = QPixmap.fromImage(image)
+            except Exception as e:
+                print(f"❌ 强制图片粘贴失败: {e}")
+                return
+            
+            if pixmap and not pixmap.isNull():
+                self.image_pasted.emit(pixmap)
+                print("✅ 强制图片粘贴成功")
+            else:
+                print("❌ 无法获取图片数据")
+    
+    def paste_files_only(self):
+        """只粘贴文件内容"""
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        
+        if mime_data.hasUrls():
+            file_paths = []
+            for url in mime_data.urls():
+                if url.isLocalFile():
+                    file_paths.append(url.toLocalFile())
+            
+            if file_paths:
+                self.file_pasted.emit(file_paths)
+                print(f"✅ 强制文件粘贴成功: {file_paths}")
+            else:
+                print("❌ 没有有效的文件路径")
+    
+    def dragEnterEvent(self, event):
+        """拖拽进入事件"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+    
+    def dropEvent(self, event):
+        """拖拽放下事件"""
+        if event.mimeData().hasUrls():
+            file_paths = []
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    file_paths.append(url.toLocalFile())
+            
+            if file_paths:
+                print(f"🎯 拖拽文件: {file_paths}")
+                self.file_pasted.emit(file_paths)
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+        else:
+            event.ignore()
+
 class OnlineModernButton(QPushButton):
     """现代风格按钮"""
     def __init__(self, text, parent=None):
@@ -878,6 +1559,15 @@ class OnlineChatAPI(QThread):
         except Exception as e:
             self.error_occurred.emit(f"加载在线用户失败: {str(e)}")
     
+    def is_image_file(self, filename):
+        """判断文件是否为图片"""
+        if not filename:
+            return False
+        
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']
+        ext = os.path.splitext(filename.lower())[1]
+        return ext in image_extensions
+    
     def upload_file_and_send(self, file_path, room_id="global"):
         """上传文件并发送消息 - 根据分析报告实现"""
         try:
@@ -955,6 +1645,14 @@ class OnlineChatAPI(QThread):
             # 解析响应 - 应该返回ChatMessage格式
             message_data = response.json()
             
+            # 自动设置消息类型：如果是图片文件，设置为image类型
+            if self.is_image_file(message_data.get('file_name', filename)):
+                message_data['message_type'] = 'image'
+                print(f"🖼️ 检测到图片文件，设置消息类型为: image")
+            elif 'message_type' not in message_data:
+                message_data['message_type'] = 'file'
+                print(f"📄 设置消息类型为: file")
+            
             # 验证响应数据结构
             if not self._validate_message_structure(message_data):
                 print("警告: 文件上传响应数据结构不完整")
@@ -962,6 +1660,7 @@ class OnlineChatAPI(QThread):
             print(f"✅ 文件上传成功: {message_data.get('file_name', filename)}")
             print(f"   文件URL: {message_data.get('file_url', 'N/A')}")
             print(f"   消息ID: {message_data.get('id', 'N/A')}")
+            print(f"   消息类型: {message_data.get('message_type', 'N/A')}")
             
             # 发出消息接收信号
             self.message_received.emit(message_data)
@@ -1501,10 +2200,10 @@ class OnlineChatWidget(QWidget):
         input_row_layout = QHBoxLayout()
         input_row_layout.setSpacing(15)
         
-        self.input = QLineEdit()
+        self.input = PasteEnabledLineEdit()
         self.input.setFixedHeight(45)
         self.input.setFont(QFont("Microsoft YaHei UI", 10))
-        self.input.setPlaceholderText("输入消息...")
+        self.input.setPlaceholderText("输入消息或粘贴文件(Ctrl+V)...")
         self.input.setStyleSheet("""
             QLineEdit {
                 background-color: #F0F2F5;
@@ -1519,6 +2218,10 @@ class OnlineChatWidget(QWidget):
             }
         """)
         self.input.returnPressed.connect(self.send_message)
+        
+        # 连接粘贴信号
+        self.input.file_pasted.connect(self.handle_pasted_files)
+        self.input.image_pasted.connect(self.handle_pasted_image)
         
         self.send_btn = OnlineModernButton("发送")
         self.send_btn.setFixedWidth(120)
@@ -1615,10 +2318,15 @@ class OnlineChatWidget(QWidget):
         if not timestamp:
             timestamp = datetime.now().strftime("%H:%M")
         
-        # 如果是文件消息，使用FileChatBubble
-        if message_type == "file" and file_info:
+        # 根据消息类型和文件信息选择合适的气泡
+        if message_type == "image" and file_info:
+            # 图片消息使用ImageChatBubble
+            bubble = ImageChatBubble(file_info, is_user, sender_name, timestamp, profession)
+        elif message_type == "file" and file_info:
+            # 文件消息使用FileChatBubble
             bubble = FileChatBubble(file_info, is_user, sender_name, timestamp, profession)
         else:
+            # 普通文本消息使用OnlineChatBubble
             bubble = OnlineChatBubble(content, is_user, sender_name, timestamp, profession, message_type)
             
         self.chat_layout.addWidget(bubble)
@@ -1911,7 +2619,9 @@ class OnlineChatWidget(QWidget):
         current_user_profession = self._get_user_profession(sender_role)
         
         # 创建消息气泡并设置message_id
-        if message_type == "file" and file_info:
+        if message_type == "image" and file_info:
+            bubble = ImageChatBubble(file_info, True, sender_name, formatted_time, current_user_profession)
+        elif message_type == "file" and file_info:
             bubble = FileChatBubble(file_info, True, sender_name, formatted_time, current_user_profession)
         else:
             bubble = OnlineChatBubble(content, True, sender_name, formatted_time, current_user_profession, message_type)
@@ -1974,6 +2684,13 @@ class OnlineChatWidget(QWidget):
             # 格式化时间戳
             formatted_time = self._format_timestamp(timestamp)
             
+            # 自动识别图片类型：如果服务器没有正确设置消息类型，客户端自动识别
+            if message_type == 'file' and message.get('file_name'):
+                # 检查文件名是否为图片
+                if self._is_image_file(message.get('file_name')):
+                    message_type = 'image'
+                    print(f"🖼️ 自动识别图片文件: {message.get('file_name')}")
+            
             # 创建消息签名用于去重
             message_signature = f"{content}_{formatted_time}_{sender_name}"
             
@@ -2010,7 +2727,9 @@ class OnlineChatWidget(QWidget):
             sender_profession = self._get_user_profession(sender_role)
             
             # 创建消息气泡并添加消息ID
-            if message_type == "file" and file_info:
+            if message_type == "image" and file_info:
+                bubble = ImageChatBubble(file_info, is_user, sender_name, formatted_time, sender_profession)
+            elif message_type == "file" and file_info:
                 bubble = FileChatBubble(file_info, is_user, sender_name, formatted_time, sender_profession)
             else:
                 bubble = OnlineChatBubble(content, is_user, sender_name, formatted_time, sender_profession, message_type)
@@ -2081,6 +2800,15 @@ class OnlineChatWidget(QWidget):
             print(f"获取token用户信息失败: {e}")
         
         return possible_user_names
+    
+    def _is_image_file(self, filename):
+        """判断文件是否为图片"""
+        if not filename:
+            return False
+        
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']
+        ext = os.path.splitext(filename.lower())[1]
+        return ext in image_extensions
     
     def on_online_users_loaded(self, users):
         """在线用户加载完成处理"""
@@ -2171,6 +2899,130 @@ class OnlineChatWidget(QWidget):
         if self.auto_refresh_timer.isActive():
             self.auto_refresh_timer.stop()
         event.accept() 
+
+    def handle_pasted_files(self, file_paths):
+        """处理粘贴的文件列表"""
+        if not file_paths:
+            return
+        
+        print(f"📋 处理粘贴的文件: {file_paths}")
+        
+        # 检查连接状态
+        if self.connection_error:
+            self.add_message(
+                "无法上传文件：服务器连接已断开，请点击重连", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
+            return
+        
+        # 处理每个文件
+        for file_path in file_paths:
+            if not os.path.exists(file_path):
+                self.add_message(
+                    f"文件不存在: {file_path}", 
+                    is_user=False, 
+                    sender_name="系统", 
+                    timestamp=datetime.now().strftime("%H:%M")
+                )
+                continue
+                
+            if not os.path.isfile(file_path):
+                self.add_message(
+                    f"不是有效文件: {file_path}", 
+                    is_user=False, 
+                    sender_name="系统", 
+                    timestamp=datetime.now().strftime("%H:%M")
+                )
+                continue
+            
+            # 检查文件大小
+            file_size = os.path.getsize(file_path)
+            if file_size > 10 * 1024 * 1024:  # 10MB 限制
+                self.add_message(
+                    f"文件过大(超过10MB): {os.path.basename(file_path)}", 
+                    is_user=False, 
+                    sender_name="系统", 
+                    timestamp=datetime.now().strftime("%H:%M")
+                )
+                continue
+            
+            # 显示上传提示
+            filename = os.path.basename(file_path)
+            self.add_message(
+                f"正在上传粘贴的文件: {filename}", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
+            
+            # 上传文件
+            self.api.upload_file_and_send(file_path, self.api.room_id)
+    
+    def handle_pasted_image(self, pixmap):
+        """处理粘贴的图片数据"""
+        print("📋 处理粘贴的图片")
+        
+        # 检查连接状态
+        if self.connection_error:
+            self.add_message(
+                "无法上传图片：服务器连接已断开，请点击重连", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
+            return
+        
+        try:
+            # 生成临时文件名
+            temp_dir = tempfile.gettempdir()
+            temp_filename = f"pasted_image_{uuid.uuid4().hex[:8]}.png"
+            temp_path = os.path.join(temp_dir, temp_filename)
+            
+            # 保存图片到临时文件
+            if pixmap.save(temp_path, "PNG"):
+                print(f"📋 图片已保存到临时文件: {temp_path}")
+                
+                # 显示上传提示
+                self.add_message(
+                    "正在上传粘贴的图片...", 
+                    is_user=False, 
+                    sender_name="系统", 
+                    timestamp=datetime.now().strftime("%H:%M")
+                )
+                
+                # 上传文件
+                self.api.upload_file_and_send(temp_path, self.api.room_id)
+                
+                # 设置定时器清理临时文件
+                QTimer.singleShot(30000, lambda: self.cleanup_temp_file(temp_path))  # 30秒后清理
+                
+            else:
+                self.add_message(
+                    "保存粘贴的图片失败", 
+                    is_user=False, 
+                    sender_name="系统", 
+                    timestamp=datetime.now().strftime("%H:%M")
+                )
+                
+        except Exception as e:
+            print(f"❌ 处理粘贴图片失败: {str(e)}")
+            self.add_message(
+                f"处理粘贴图片失败: {str(e)}", 
+                is_user=False, 
+                sender_name="系统", 
+                timestamp=datetime.now().strftime("%H:%M")
+            )
+    
+    def cleanup_temp_file(self, file_path):
+        """清理临时文件"""
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"🗑️ 临时文件已清理: {file_path}")
+        except Exception as e:
+            print(f"⚠️ 清理临时文件失败: {str(e)}")
 
     def download_file_from_chat(self, file_url, file_name):
         """从聊天框下载文件 - 直接下载到本地"""
