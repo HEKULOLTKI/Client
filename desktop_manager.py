@@ -5,6 +5,7 @@ import subprocess
 import requests
 import csv
 import pandas as pd
+import shutil
 from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout, 
                              QPushButton, QLabel, QSystemTrayIcon, QMenu, 
                              QDesktopWidget, QToolButton, QFrame, QSizePolicy,
@@ -1720,6 +1721,285 @@ class TaskSelectionDialog(QDialog):
         return self.selected_tasks
 
 
+class PDFPreviewDialog(QDialog):
+    """PDF预览和下载对话框"""
+    
+    def __init__(self, pdf_path, role_name, parent=None):
+        super().__init__(parent)
+        self.pdf_path = pdf_path
+        self.role_name = role_name
+        self.init_ui()
+        
+    def init_ui(self):
+        """初始化UI"""
+        self.setWindowTitle(f"项目汇报文档预览 - {self.role_name}")
+        self.setGeometry(100, 100, 900, 700)
+        
+        # 创建主布局
+        main_layout = QVBoxLayout()
+        
+        # 标题区域
+        title_layout = QHBoxLayout()
+        title_label = QLabel(f"📄 {self.role_name} - 项目任务汇报单")
+        title_label.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
+        title_label.setStyleSheet("""
+            QLabel {
+                color: #2d3436;
+                padding: 10px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border-radius: 8px;
+                margin-bottom: 10px;
+            }
+        """)
+        title_layout.addWidget(title_label)
+        main_layout.addLayout(title_layout)
+        
+        # 内容区域
+        content_frame = QFrame()
+        content_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+        content_layout = QVBoxLayout(content_frame)
+        
+        # PDF信息
+        info_label = QLabel(f"📁 文件路径: {self.pdf_path}")
+        info_label.setStyleSheet("""
+            QLabel {
+                color: #636e72;
+                padding: 5px;
+                background: #f8f9fa;
+                border-radius: 4px;
+                margin-bottom: 10px;
+            }
+        """)
+        content_layout.addWidget(info_label)
+        
+        # 预览提示
+        if os.path.exists(self.pdf_path):
+            preview_text = f"""
+📋 任务完成祝贺！
+
+恭喜您完成了所有{self.role_name}相关任务！
+
+🎉 您的工作表现出色，现在可以查看项目汇报文档：
+
+📄 文档内容：
+• 项目任务执行情况汇报
+• 工作成果总结
+• 技术方案与实施记录
+• 项目交付物清单
+
+💡 操作说明：
+• 点击"预览文档"按钮在系统默认PDF阅读器中打开文档
+• 点击"下载文档"按钮将文档保存到您指定的位置
+• 点击"关闭"按钮关闭此对话框
+
+📊 文档详情：
+• 文件大小：{self.get_file_size()} KB
+• 创建时间：{self.get_file_time()}
+• 适用角色：{self.role_name}
+            """
+            file_exists = True
+        else:
+            preview_text = f"""
+❌ 文档文件未找到
+
+很抱歉，未能找到{self.role_name}的项目汇报文档。
+
+📁 预期路径：{self.pdf_path}
+
+🔧 可能的原因：
+• 文档文件已被移动或删除
+• 文件路径配置错误
+• 系统权限问题
+
+💡 建议操作：
+• 检查文档文件是否存在于Project_Management目录中
+• 联系系统管理员获取帮助
+• 手动查找相关文档文件
+            """
+            file_exists = False
+        
+        # 预览文本区域
+        preview_area = QTextEdit()
+        preview_area.setPlainText(preview_text)
+        preview_area.setFont(QFont("Microsoft YaHei", 10))
+        preview_area.setReadOnly(True)
+        preview_area.setStyleSheet("""
+            QTextEdit {
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
+                padding: 15px;
+                color: #2d3436;
+                line-height: 1.6;
+            }
+        """)
+        content_layout.addWidget(preview_area)
+        
+        main_layout.addWidget(content_frame)
+        
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        
+        # 预览按钮
+        self.preview_button = QPushButton("📖 预览文档")
+        self.preview_button.setFont(QFont("Microsoft YaHei", 10))
+        self.preview_button.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: linear-gradient(135deg, #00a085 0%, #00b894 100%);
+                transform: translateY(-1px);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(135deg, #00a085 0%, #00b894 100%);
+            }
+            QPushButton:disabled {
+                background: #95a5a6;
+                color: #ecf0f1;
+            }
+        """)
+        self.preview_button.clicked.connect(self.preview_pdf)
+        self.preview_button.setEnabled(file_exists)
+        
+        # 下载按钮
+        self.download_button = QPushButton("💾 下载文档")
+        self.download_button.setFont(QFont("Microsoft YaHei", 10))
+        self.download_button.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+                transform: translateY(-1px);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            }
+            QPushButton:disabled {
+                background: #95a5a6;
+                color: #ecf0f1;
+            }
+        """)
+        self.download_button.clicked.connect(self.download_pdf)
+        self.download_button.setEnabled(file_exists)
+        
+        # 关闭按钮
+        close_button = QPushButton("❌ 关闭")
+        close_button.setFont(QFont("Microsoft YaHei", 10))
+        close_button.setStyleSheet("""
+            QPushButton {
+                background: linear-gradient(135deg, #e17055 0%, #d63031 100%);
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: linear-gradient(135deg, #d63031 0%, #e17055 100%);
+                transform: translateY(-1px);
+            }
+            QPushButton:pressed {
+                background: linear-gradient(135deg, #d63031 0%, #e17055 100%);
+            }
+        """)
+        close_button.clicked.connect(self.close)
+        
+        button_layout.addWidget(self.preview_button)
+        button_layout.addWidget(self.download_button)
+        button_layout.addStretch()
+        button_layout.addWidget(close_button)
+        
+        main_layout.addLayout(button_layout)
+        self.setLayout(main_layout)
+        
+    def get_file_size(self):
+        """获取文件大小"""
+        try:
+            if os.path.exists(self.pdf_path):
+                size = os.path.getsize(self.pdf_path)
+                return f"{size // 1024}"
+            return "未知"
+        except:
+            return "未知"
+    
+    def get_file_time(self):
+        """获取文件创建时间"""
+        try:
+            if os.path.exists(self.pdf_path):
+                timestamp = os.path.getctime(self.pdf_path)
+                return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+            return "未知"
+        except:
+            return "未知"
+    
+    def preview_pdf(self):
+        """预览PDF文档"""
+        try:
+            if not os.path.exists(self.pdf_path):
+                QMessageBox.warning(self, "文件不存在", f"找不到PDF文件：{self.pdf_path}")
+                return
+            
+            # 使用系统默认程序打开PDF
+            if sys.platform == "win32":
+                os.startfile(self.pdf_path)
+            elif sys.platform == "darwin":  # macOS
+                subprocess.run(["open", self.pdf_path])
+            else:  # Linux
+                subprocess.run(["xdg-open", self.pdf_path])
+            
+            print(f"✅ 已使用系统默认程序打开PDF：{self.pdf_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "预览失败", f"无法预览PDF文件：{str(e)}")
+            print(f"❌ 预览PDF失败：{str(e)}")
+    
+    def download_pdf(self):
+        """下载PDF文档"""
+        try:
+            if not os.path.exists(self.pdf_path):
+                QMessageBox.warning(self, "文件不存在", f"找不到PDF文件：{self.pdf_path}")
+                return
+            
+            # 获取保存路径
+            default_name = f"项目任务汇报单子({self.role_name}).pdf"
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                "保存PDF文档", 
+                default_name,
+                "PDF文件 (*.pdf);;所有文件 (*.*)"
+            )
+            
+            if save_path:
+                # 复制文件到指定位置
+                shutil.copy2(self.pdf_path, save_path)
+                QMessageBox.information(self, "下载成功", f"文档已保存到：{save_path}")
+                print(f"✅ 文档已下载到：{save_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "下载失败", f"无法下载PDF文件：{str(e)}")
+            print(f"❌ 下载PDF失败：{str(e)}")
+
+
 class TaskSubmissionWorker(QThread):
     """任务提交工作线程"""
     
@@ -2833,6 +3113,7 @@ class DesktopManager(QWidget):
         self.device_worker = None  # 设备添加工作线程
         self.batch_device_worker = None  # 批量设备添加工作线程
         self.device_dialog = None  # 设备添加对话框实例
+        self.pdf_preview_dialog = None  # PDF预览对话框实例
         
         # 初始化增强的数据接收器
         self.data_receiver = DataReceiver(self)
@@ -4503,7 +4784,7 @@ class DesktopManager(QWidget):
         
     @pyqtSlot(str) 
     def on_task_completed(self, message):
-        """任务完成回调 - 增强版：任务提交后自动刷新状态"""
+        """任务完成回调 - 增强版：任务提交后自动刷新状态并检查是否显示PDF预览"""
         print(f"任务完成: {message}")
         
         # 显示完成对话框
@@ -4512,6 +4793,9 @@ class DesktopManager(QWidget):
         # 自动刷新任务数据和显示
         print("🔄 任务提交完成，自动刷新任务状态...")
         QTimer.singleShot(1000, self.refresh_and_update_tasks)  # 1秒后刷新，确保后端状态已更新
+        
+        # 检查是否所有任务都已完成，如果是则显示PDF预览
+        QTimer.singleShot(2000, self.check_and_show_pdf_preview)  # 2秒后检查PDF预览
     
     def refresh_and_update_tasks(self):
         """刷新并更新任务显示"""
@@ -4584,6 +4868,124 @@ class DesktopManager(QWidget):
             # 确保定时器重新启动
             if hasattr(self, 'task_refresh_timer'):
                 self.task_refresh_timer.start(15000)
+    
+    def check_and_show_pdf_preview(self):
+        """检查任务完成状态并显示PDF预览"""
+        try:
+            print("🔍 检查是否需要显示PDF预览...")
+            
+            # 检查是否有已缓存的任务数据
+            received_tasks = self.load_received_tasks()
+            if not received_tasks:
+                print("❌ 没有找到任务数据，无法检查完成状态")
+                return
+            
+            # 检查所有任务是否都已完成
+            if self.check_all_tasks_completed(received_tasks):
+                # 获取当前用户角色
+                role_name = self.get_current_role_name()
+                print(f"🎉 检测到{role_name}的所有任务已完成，准备显示PDF预览")
+                
+                # 显示PDF预览
+                self.show_pdf_preview(role_name)
+            else:
+                print("📋 还有任务未完成，不显示PDF预览")
+                
+        except Exception as e:
+            print(f"❌ 检查PDF预览状态时出错: {str(e)}")
+    
+    def check_all_tasks_completed(self, tasks):
+        """检查所有任务是否已完成"""
+        try:
+            if not tasks:
+                return False
+            
+            completed_statuses = ['已完成', 'completed', '完成']
+            
+            for task in tasks:
+                task_status = task.get('status', task.get('assignment_status', '')).lower()
+                if task_status not in [status.lower() for status in completed_statuses]:
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ 检查任务完成状态时出错: {str(e)}")
+            return False
+    
+    def get_current_role_name(self):
+        """获取当前角色名称"""
+        try:
+            if self.current_role_data:
+                selected_role = self.current_role_data.get('selectedRole', {})
+                return selected_role.get('label', '未知角色')
+            return '未知角色'
+        except Exception as e:
+            print(f"❌ 获取角色名称时出错: {str(e)}")
+            return '未知角色'
+    
+    def show_pdf_preview(self, role_name):
+        """显示PDF预览对话框"""
+        try:
+            # 获取对应的PDF文件路径
+            pdf_path = self.get_pdf_path_by_role(role_name)
+            
+            if not pdf_path:
+                print(f"❌ 未找到角色 {role_name} 对应的PDF文件")
+                QMessageBox.warning(self, "文件未找到", f"未找到 {role_name} 的项目汇报文档")
+                return
+            
+            print(f"📄 准备显示PDF预览：{pdf_path}")
+            
+            # 创建并显示PDF预览对话框
+            if self.pdf_preview_dialog:
+                self.pdf_preview_dialog.close()
+            
+            self.pdf_preview_dialog = PDFPreviewDialog(pdf_path, role_name, self)
+            self.pdf_preview_dialog.show()
+            self.pdf_preview_dialog.raise_()  # 确保对话框在最前面
+            self.pdf_preview_dialog.activateWindow()
+            
+            print(f"✅ PDF预览对话框已显示")
+            
+        except Exception as e:
+            print(f"❌ 显示PDF预览时出错: {str(e)}")
+            QMessageBox.critical(self, "预览失败", f"显示PDF预览时出错：{str(e)}")
+    
+    def get_pdf_path_by_role(self, role_name):
+        """根据角色名称获取对应的PDF文件路径"""
+        try:
+            # 角色名称到PDF文件名的映射
+            role_pdf_mapping = {
+                "系统分析师": "项目任务汇报单子(系统分析师).pdf",
+                "系统架构师": "项目任务汇报单子(系统架构设计师).pdf", 
+                "系统规划与管理师": "项目任务汇报单子(系统规划与管理师).pdf",
+                "网络规划设计师": "项目任务汇报单子(网络规划设计师).pdf",
+                "网络工程师": "项目任务汇报单子(网络规划设计师).pdf",  # 兼容别名
+                "规划管理师": "项目任务汇报单子(系统规划与管理师).pdf",  # 兼容别名
+                "架构师": "项目任务汇报单子(系统架构设计师).pdf",  # 兼容别名
+                "分析师": "项目任务汇报单子(系统分析师).pdf"  # 兼容别名
+            }
+            
+            pdf_filename = role_pdf_mapping.get(role_name)
+            if not pdf_filename:
+                print(f"❌ 未找到角色 {role_name} 的PDF映射")
+                return None
+            
+            # 构建完整路径
+            pdf_path = os.path.join("Project_Management", pdf_filename)
+            
+            # 检查文件是否存在
+            if os.path.exists(pdf_path):
+                print(f"✅ 找到PDF文件：{pdf_path}")
+                return pdf_path
+            else:
+                print(f"❌ PDF文件不存在：{pdf_path}")
+                return None
+                
+        except Exception as e:
+            print(f"❌ 获取PDF路径时出错: {str(e)}")
+            return None
     
     @pyqtSlot(str)
     def on_task_error(self, error_message):
@@ -4669,6 +5071,9 @@ class DesktopManager(QWidget):
         if self.transition_page:
             self.transition_page.close()
             print("过渡页面已关闭")
+        if self.pdf_preview_dialog:
+            self.pdf_preview_dialog.close()
+            print("PDF预览对话框已关闭")
             
         print("所有子窗口清理完成")
         

@@ -53,6 +53,7 @@ class ProcessMonitor(QThread):
         """停止监控"""
         self.running = False
 
+
 class APIServer(QObject):
     # 定义信号用于跨线程通信
     close_fullscreen_signal = pyqtSignal()
@@ -444,6 +445,8 @@ class APIServer(QObject):
             print(f"      - 角色选择: action='role_selection' + user + selectedRole")
             return False
     
+
+    
     def run(self):
         """运行API服务器"""
         try:
@@ -608,6 +611,8 @@ class FullscreenBrowser(QMainWindow):
             
         except Exception as e:
             print(f"❌ 打开数字孪生平台时出错: {str(e)}")
+
+
 
     def close_fullscreen(self):
         """关闭全屏模式（线程安全）"""
