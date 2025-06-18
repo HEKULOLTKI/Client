@@ -3320,27 +3320,42 @@ class DesktopManager(QWidget):
         """创建信息显示区域"""
         info_layout = QHBoxLayout()
         
-        # 时间显示
-        self.time_label = QLabel()
-        self.time_label.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
-        self.time_label.setStyleSheet("""
+        # 任务显示区域
+        self.task_display_widget = QWidget()
+        self.task_display_widget.setFixedWidth(400)  # 设置固定宽度
+        self.task_display_widget.setFixedHeight(45)  # 设置固定高度
+        self.task_display_widget.setStyleSheet("""
+            QWidget {
+                background: transparent;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 8px;
+                padding: 2px;
+            }
+            QWidget:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.4);
+            }
+        """)
+        self.task_display_widget.setCursor(Qt.PointingHandCursor)
+        self.task_display_widget.mousePressEvent = self.on_task_display_clicked
+        
+        # 任务滚动标签
+        self.task_scroll_label = QLabel("暂无任务")
+        self.task_scroll_label.setFont(QFont("Microsoft YaHei", 11, QFont.Bold))
+        self.task_scroll_label.setStyleSheet("""
             QLabel {
                 color: #ffffff;
                 background: transparent;
-                padding: 2px 8px;
+                padding: 8px 12px;
+                border: none;
             }
         """)
+        self.task_scroll_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         
-        # 日期显示
-        self.date_label = QLabel()
-        self.date_label.setFont(QFont("Microsoft YaHei", 9))
-        self.date_label.setStyleSheet("""
-            QLabel {
-                color: #dcdde1;
-                background: transparent;
-                padding: 2px 8px;
-            }
-        """)
+        # 创建任务显示布局
+        task_layout = QHBoxLayout(self.task_display_widget)
+        task_layout.addWidget(self.task_scroll_label)
+        task_layout.setContentsMargins(0, 0, 0, 0)
         
         # 系统状态
         self.status_label = QLabel("系统运行正常")
@@ -3354,12 +3369,17 @@ class DesktopManager(QWidget):
         """)
         
         # 添加到布局
-        info_layout.addWidget(self.time_label)
-        info_layout.addWidget(self.date_label)
+        info_layout.addWidget(self.task_display_widget)
         info_layout.addWidget(self.status_label)
         info_layout.addStretch()
         
         layout.addLayout(info_layout)
+        
+        # 初始化任务数据和滚动相关变量
+        self.current_tasks = []
+        self.current_task_index = 0
+        self.task_scroll_direction = 1  # 1: 向右滚动, -1: 向左滚动
+        self.task_scroll_position = 0
         
     def create_buttons_section(self, layout):
         """创建功能按钮区域"""
@@ -3432,13 +3452,19 @@ class DesktopManager(QWidget):
         
     def setup_timer(self):
         """设置定时器"""
-        # 时间更新定时器
-        self.time_timer = QTimer()
-        self.time_timer.timeout.connect(self.update_time)
-        self.time_timer.start(1000)  # 每秒更新
+        # 任务显示更新定时器
+        self.task_timer = QTimer()
+        self.task_timer.timeout.connect(self.update_task_display)
+        self.task_timer.start(3000)  # 每3秒更新（用于任务滚动）
         
-        # 初始化时间显示
-        self.update_time()
+        # 任务数据刷新定时器
+        self.task_refresh_timer = QTimer()
+        self.task_refresh_timer.timeout.connect(self.refresh_task_data)
+        self.task_refresh_timer.start(30000)  # 每30秒刷新任务数据
+        
+        # 初始化任务显示
+        self.refresh_task_data()
+        self.update_task_display()
         
     def setup_animations(self):
         """设置动画效果"""
@@ -3458,18 +3484,113 @@ class DesktopManager(QWidget):
         
         self.move(x, y)
         
-    def update_time(self):
-        """更新时间显示"""
-        current_time = QTime.currentTime()
-        time_text = current_time.toString("hh:mm:ss")
-        self.time_label.setText(time_text)
-        
-        # 更新日期
-        from datetime import datetime
-        current_date = datetime.now()
-        date_text = current_date.strftime("%Y年%m月%d日")
-        self.date_label.setText(date_text)
-        
+    def refresh_task_data(self):
+        """刷新任务数据"""
+        try:
+            tasks = self.load_received_tasks()
+            if tasks:
+                self.current_tasks = tasks
+                self.current_task_index = 0  # 重置索引
+                print(f"📋 任务数据已刷新，共 {len(tasks)} 个任务")
+            else:
+                self.current_tasks = []
+                print("📋 未找到任务数据")
+        except Exception as e:
+            print(f"❌ 刷新任务数据失败: {str(e)}")
+            self.current_tasks = []
+    
+    def update_task_display(self):
+        """更新任务显示"""
+        try:
+            if not self.current_tasks:
+                self.task_scroll_label.setText("暂无任务")
+                return
+            
+            if len(self.current_tasks) == 1:
+                # 只有一个任务，直接显示
+                task = self.current_tasks[0]
+                task_name = task.get('name', task.get('task_name', '未命名任务'))
+                task_status = task.get('status', task.get('assignment_status', '未知状态'))
+                display_text = f"📋 {task_name} - {task_status}"
+                self.task_scroll_label.setText(display_text)
+            else:
+                # 多个任务，轮播显示
+                if self.current_task_index >= len(self.current_tasks):
+                    self.current_task_index = 0
+                    
+                task = self.current_tasks[self.current_task_index]
+                task_name = task.get('name', task.get('task_name', '未命名任务'))
+                task_status = task.get('status', task.get('assignment_status', '未知状态'))
+                progress = task.get('progress', task.get('completion_percentage', 0))
+                
+                # 构建显示文本
+                display_text = f"📋 [{self.current_task_index + 1}/{len(self.current_tasks)}] {task_name} - {task_status}"
+                if progress > 0:
+                    display_text += f" ({progress}%)"
+                
+                self.task_scroll_label.setText(display_text)
+                
+                # 移动到下一个任务
+                self.current_task_index += 1
+                
+        except Exception as e:
+            print(f"❌ 更新任务显示失败: {str(e)}")
+            self.task_scroll_label.setText("任务显示异常")
+    
+    def on_task_display_clicked(self, event):
+        """点击任务显示区域的处理函数"""
+        try:
+            if not self.current_tasks:
+                # 没有任务时，尝试刷新任务数据
+                self.refresh_task_data()
+                if not self.current_tasks:
+                    self.status_label.setText("暂无任务数据")
+                    QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+                    return
+            
+            # 如果有任务，打开任务详情
+            if len(self.current_tasks) == 1:
+                # 只有一个任务，直接显示详情
+                self.show_single_task_detail(self.current_tasks[0])
+            else:
+                # 多个任务，打开任务列表
+                self.submit_tasks()  # 使用现有的任务提交功能
+                
+        except Exception as e:
+            print(f"❌ 处理任务显示点击事件失败: {str(e)}")
+            self.status_label.setText("任务详情打开失败")
+            QTimer.singleShot(2000, lambda: self.status_label.setText("系统运行正常"))
+    
+    def show_single_task_detail(self, task):
+        """显示单个任务的详情"""
+        try:
+            from PyQt5.QtWidgets import QMessageBox
+            
+            task_name = task.get('name', task.get('task_name', '未命名任务'))
+            task_status = task.get('status', task.get('assignment_status', '未知状态'))
+            task_type = task.get('type', task.get('task_type', '未知类型'))
+            progress = task.get('progress', task.get('completion_percentage', 0))
+            description = task.get('description', '暂无描述')
+            assignment_id = task.get('assignment_id', '无')
+            
+            detail_text = f"""
+任务名称: {task_name}
+任务状态: {task_status}
+任务类型: {task_type}
+完成进度: {progress}%
+分配ID: {assignment_id}
+任务描述: {description}
+            """
+            
+            msg = QMessageBox()
+            msg.setWindowTitle("任务详情")
+            msg.setText(detail_text.strip())
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec_()
+            
+        except Exception as e:
+            print(f"❌ 显示任务详情失败: {str(e)}")
+    
     def show_tuopo(self):
         """显示/隐藏拓扑图"""
         if not self.tuopo_widget:
