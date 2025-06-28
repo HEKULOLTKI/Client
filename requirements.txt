@@ -10,6 +10,9 @@ flask-cors>=3.0.0
 # 数据处理
 pandas>=1.5.0
 
+# PDF处理
+PyMuPDF>=1.23.0
+
 # 可选：如果需要更好的日期时间处理
 python-dateutil>=2.8.0
 

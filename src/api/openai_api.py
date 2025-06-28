@@ -11,9 +11,9 @@ class OpenAIChat(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.chat_id = "2fe60da83a2b11f0a458e69def3db951"
-        self.url = f'http://172.18.120.46/api/v1/chats_openai/{self.chat_id}/chat/completions'
-        self.api_key = 'ragflow-E4Y2NiYjE0M2EyYTExZjA4MzM1ZTY5ZG'
+        self.chat_id = "8dfc6b34541711f0a2b90242ac130006"
+        self.url = f'http://10.10.20.121/api/v1/chats_openai/{self.chat_id}/chat/completions'
+        self.api_key = 'ragflow-I0YTgzNzdjNTQxNzExZjA4YzY0MDI0Mm'
         self.lock = threading.Lock()
 
     def chat_async(self, messages, max_tokens=204800):

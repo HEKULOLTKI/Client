@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout,
                              QMessageBox, QDialog, QCheckBox, QScrollArea, 
                              QDialogButtonBox, QLineEdit, QComboBox, QFormLayout,
                              QTextEdit, QFileDialog, QTabWidget, QTableWidget,
-                             QTableWidgetItem, QHeaderView, QProgressBar)
+                             QTableWidgetItem, QHeaderView, QProgressBar, QGraphicsDropShadowEffect)
 from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 from src.core import config
@@ -27,6 +27,14 @@ import logging
 import time
 from datetime import datetime
 import re
+
+# PDF处理相关导入
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    print("⚠️ PyMuPDF库未找到，PDF预览功能将受限")
+    PYMUPDF_AVAILABLE = False
 
 # 导入进度报告管理模块
 try:
@@ -1730,257 +1738,558 @@ class TaskSelectionDialog(QDialog):
 
 
 class PDFPreviewDialog(QDialog):
-    """PDF预览和下载对话框"""
+    """PDF预览和下载对话框 - 使用PyMuPDF渲染图像"""
     
     def __init__(self, pdf_path, role_name, parent=None):
         super().__init__(parent)
         self.pdf_path = pdf_path
         self.role_name = role_name
+        self.current_page = 0
+        self.total_pages = 0
+        self.pdf_doc = None
         self.init_ui()
+        self.load_pdf()
         
     def init_ui(self):
-        """初始化UI"""
+        """初始化UI - 统一样式"""
         self.setWindowTitle(f"项目汇报文档预览 - {self.role_name}")
-        self.setGeometry(100, 100, 900, 700)
+        self.setFixedSize(1000, 800)
+        self.setModal(True)
         
-        # 创建主布局
-        main_layout = QVBoxLayout()
-        
-        # 标题区域
-        title_layout = QHBoxLayout()
-        title_label = QLabel(f"📄 {self.role_name} - 项目任务汇报单")
-        title_label.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
-        title_label.setStyleSheet("""
-            QLabel {
-                color: #2d3436;
-                padding: 10px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border-radius: 8px;
-                margin-bottom: 10px;
+        # 设置对话框样式 - 与其他弹窗保持一致
+        self.setStyleSheet("""
+            QDialog {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f8f9fa, stop:1 #e9ecef);
+                border-radius: 15px;
             }
         """)
-        title_layout.addWidget(title_label)
-        main_layout.addLayout(title_layout)
         
-        # 内容区域
-        content_frame = QFrame()
-        content_frame.setStyleSheet("""
+        # 主布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(25, 25, 25, 20)
+        layout.setSpacing(15)
+        
+        # 标题区域 - 与其他弹窗保持一致
+        title_frame = QFrame()
+        title_frame.setStyleSheet("""
             QFrame {
                 background: white;
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                padding: 10px;
+                border-radius: 10px;
+                border: 1px solid rgba(102, 126, 234, 0.2);
+                padding: 8px 15px;
             }
         """)
-        content_layout = QVBoxLayout(content_frame)
+        title_layout = QHBoxLayout(title_frame)
         
-        # PDF信息
-        info_label = QLabel(f"📁 文件路径: {self.pdf_path}")
-        info_label.setStyleSheet("""
+        title_icon = QLabel("📄")
+        title_icon.setFont(QFont("Segoe UI Emoji", 18))
+        title_icon.setStyleSheet("background: transparent; color: #667eea;")
+        
+        title_text = QLabel(f"{self.role_name} - 项目任务汇报单")
+        title_text.setFont(QFont("微软雅黑", 12, QFont.Bold))
+        title_text.setStyleSheet("color: #2d3436; background: transparent;")
+        
+        title_layout.addWidget(title_icon)
+        title_layout.addWidget(title_text)
+        title_layout.addStretch()
+        
+        layout.addWidget(title_frame)
+        
+        # PDF预览区域
+        self.create_preview_area(layout)
+        
+        # 合并按钮区域（控制按钮 + 操作按钮）
+        self.create_combined_buttons(layout)
+        
+    def create_preview_area(self, layout):
+        """创建PDF预览区域"""
+        preview_frame = QFrame()
+        preview_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 10px;
+                border: 1px solid rgba(102, 126, 234, 0.1);
+                padding: 15px;
+            }
+        """)
+        preview_layout = QVBoxLayout(preview_frame)
+        
+        # PDF显示标签 - 修正滚动问题
+        self.pdf_label = QLabel()
+        self.pdf_label.setAlignment(Qt.AlignCenter)
+        self.pdf_label.setStyleSheet("""
             QLabel {
-                color: #636e72;
-                padding: 5px;
                 background: #f8f9fa;
-                border-radius: 4px;
-                margin-bottom: 10px;
+                border: 2px dashed rgba(102, 126, 234, 0.3);
+                border-radius: 8px;
+                min-height: 400px;
+                color: #6c757d;
+                font-size: 14px;
             }
         """)
-        content_layout.addWidget(info_label)
+        self.pdf_label.setText("📄 正在加载PDF文档...")
+        # 设置标签可以缩放，这对滚动很重要
+        self.pdf_label.setScaledContents(False)
+        self.pdf_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         
-        # 预览提示
-        if os.path.exists(self.pdf_path):
-            preview_text = f"""
-📋 任务完成祝贺！
-
-恭喜您完成了所有{self.role_name}相关任务！
-
-🎉 您的工作表现出色，现在可以查看项目汇报文档：
-
-📄 文档内容：
-• 项目任务执行情况汇报
-• 工作成果总结
-• 技术方案与实施记录
-• 项目交付物清单
-
-💡 操作说明：
-• 点击"预览文档"按钮在系统默认PDF阅读器中打开文档
-• 点击"下载文档"按钮将文档保存到您指定的位置
-• 点击"关闭"按钮关闭此对话框
-
-📊 文档详情：
-• 文件大小：{self.get_file_size()} KB
-• 创建时间：{self.get_file_time()}
-• 适用角色：{self.role_name}
-            """
-            file_exists = True
-        else:
-            preview_text = f"""
-❌ 文档文件未找到
-
-很抱歉，未能找到{self.role_name}的项目汇报文档。
-
-📁 预期路径：{self.pdf_path}
-
-🔧 可能的原因：
-• 文档文件已被移动或删除
-• 文件路径配置错误
-• 系统权限问题
-
-💡 建议操作：
-• 检查文档文件是否存在于Project_Management目录中
-• 联系系统管理员获取帮助
-• 手动查找相关文档文件
-            """
-            file_exists = False
-        
-        # 预览文本区域
-        preview_area = QTextEdit()
-        preview_area.setPlainText(preview_text)
-        preview_area.setFont(QFont("Microsoft YaHei", 10))
-        preview_area.setReadOnly(True)
-        preview_area.setStyleSheet("""
-            QTextEdit {
+        # 创建滚动区域 - 修正配置
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidget(self.pdf_label)
+        self.scroll_area.setWidgetResizable(False)  # 关键：设为False让内容可以超出视口
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setAlignment(Qt.AlignCenter)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                border: none;
                 background: #f8f9fa;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background: #667eea;
+                border-radius: 6px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #5a6fd8;
+            }
+            QScrollBar:horizontal {
+                border: none;
+                background: #f8f9fa;
+                height: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #667eea;
+                border-radius: 6px;
+                min-width: 30px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #5a6fd8;
+            }
+        """)
+        
+        # 添加鼠标滚轮缩放支持
+        self.scroll_area.wheelEvent = self.scroll_area_wheel_event
+        
+        preview_layout.addWidget(self.scroll_area)
+        layout.addWidget(preview_frame)
+        
+    def scroll_area_wheel_event(self, event):
+        """滚动区域鼠标滚轮事件 - 支持Ctrl+滚轮缩放"""
+        try:
+            # 检查是否按下Ctrl键
+            if event.modifiers() == Qt.ControlModifier:
+                # Ctrl+滚轮进行缩放
+                current_text = self.zoom_combo.currentText()
+                current_zoom = int(current_text.replace('%', ''))
+                
+                # 计算新的缩放比例
+                if event.angleDelta().y() > 0:  # 向上滚动，放大
+                    new_zoom = min(current_zoom + 25, 200)  # 最大200%
+                else:  # 向下滚动，缩小
+                    new_zoom = max(current_zoom - 25, 50)   # 最小50%
+                
+                # 设置新的缩放比例
+                new_zoom_text = f"{new_zoom}%"
+                if new_zoom_text != current_text:
+                    self.zoom_combo.setCurrentText(new_zoom_text)
+                    print(f"🔍 鼠标滚轮缩放: {current_zoom}% → {new_zoom}%")
+                
+                # 阻止事件传播
+                event.accept()
+            else:
+                # 正常滚动
+                QScrollArea.wheelEvent(self.scroll_area, event)
+        except Exception as e:
+            print(f"❌ 滚轮事件处理失败: {str(e)}")
+            # 回退到正常滚动
+            QScrollArea.wheelEvent(self.scroll_area, event)
+        
+    def create_control_buttons(self, layout):
+        """创建页面控制按钮"""
+        control_frame = QFrame()
+        control_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 10px;
+                border: 1px solid rgba(102, 126, 234, 0.1);
+                padding: 15px;
+            }
+        """)
+        control_layout = QHBoxLayout(control_frame)
+        
+        # 页面信息
+        self.page_info_label = QLabel("页面：0 / 0")
+        self.page_info_label.setFont(QFont("微软雅黑", 10, QFont.Bold))
+        self.page_info_label.setStyleSheet("""
+            QLabel {
+                color: #667eea;
+                background: rgba(102, 126, 234, 0.1);
+                padding: 8px 12px;
+                border-radius: 8px;
+            }
+        """)
+        
+        # 上一页按钮
+        self.prev_button = QPushButton("◀ 上一页")
+        self.prev_button.setFixedSize(100, 35)
+        self.prev_button.clicked.connect(self.prev_page)
+        
+        # 下一页按钮
+        self.next_button = QPushButton("下一页 ▶")
+        self.next_button.setFixedSize(100, 35)
+        self.next_button.clicked.connect(self.next_page)
+        
+        # 按钮样式
+        for button in [self.prev_button, self.next_button]:
+            button.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 #74b9ff, stop:1 #0984e3);
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    font-family: '微软雅黑';
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 #0984e3, stop:1 #0770c4);
+                    transform: translateY(-1px);
+                }
+                QPushButton:disabled {
+                    background: #95a5a6;
+                }
+            """)
+        
+        control_layout.addWidget(self.prev_button)
+        control_layout.addWidget(self.page_info_label)
+        control_layout.addWidget(self.next_button)
+        control_layout.addStretch()
+        
+        # 缩放控制
+        zoom_label = QLabel("🔍 缩放：")
+        zoom_label.setStyleSheet("color: #6c757d; font-weight: bold;")
+        
+        self.zoom_combo = QComboBox()
+        self.zoom_combo.addItems(["50%", "75%", "100%", "125%", "150%", "200%"])
+        self.zoom_combo.setCurrentText("100%")
+        self.zoom_combo.currentTextChanged.connect(self.zoom_changed)
+        self.zoom_combo.setStyleSheet("""
+            QComboBox {
+                background: white;
                 border: 1px solid #dee2e6;
                 border-radius: 6px;
+                padding: 5px 10px;
+                font-family: '微软雅黑';
+                min-width: 80px;
+            }
+            QComboBox:hover {
+                border-color: #667eea;
+            }
+        """)
+        
+        control_layout.addWidget(zoom_label)
+        control_layout.addWidget(self.zoom_combo)
+        
+        layout.addWidget(control_frame)
+        
+    def create_bottom_buttons(self, layout):
+        """创建底部按钮 - 简化版本，只保留下载和关闭按钮"""
+        buttons_frame = QFrame()
+        buttons_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 12px;
+                border: 1px solid rgba(102, 126, 234, 0.1);
                 padding: 15px;
-                color: #2d3436;
-                line-height: 1.6;
             }
         """)
-        content_layout.addWidget(preview_area)
+        buttons_layout = QHBoxLayout(buttons_frame)
+        buttons_layout.setContentsMargins(20, 15, 20, 15)
+        buttons_layout.setSpacing(20)
         
-        main_layout.addWidget(content_frame)
-        
-        # 按钮区域
-        button_layout = QHBoxLayout()
-        
-        # 预览按钮
-        self.preview_button = QPushButton("📖 预览文档")
-        self.preview_button.setFont(QFont("Microsoft YaHei", 10))
-        self.preview_button.setStyleSheet("""
-            QPushButton {
-                background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 6px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: linear-gradient(135deg, #00a085 0%, #00b894 100%);
-                transform: translateY(-1px);
-            }
-            QPushButton:pressed {
-                background: linear-gradient(135deg, #00a085 0%, #00b894 100%);
-            }
-            QPushButton:disabled {
-                background: #95a5a6;
-                color: #ecf0f1;
-            }
-        """)
-        self.preview_button.clicked.connect(self.preview_pdf)
-        self.preview_button.setEnabled(file_exists)
+        # 居中对齐
+        buttons_layout.addStretch()
         
         # 下载按钮
-        self.download_button = QPushButton("💾 下载文档")
-        self.download_button.setFont(QFont("Microsoft YaHei", 10))
-        self.download_button.setStyleSheet("""
+        download_btn = QPushButton("💾 下载文档")
+        download_btn.setFixedSize(120, 40)
+        download_btn.clicked.connect(self.download_pdf)
+        download_btn.setStyleSheet("""
             QPushButton {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #667eea, stop:1 #764ba2);
                 color: white;
                 border: none;
-                padding: 12px 24px;
-                border-radius: 6px;
+                border-radius: 8px;
+                font-size: 11px;
                 font-weight: bold;
+                font-family: '微软雅黑';
             }
             QPushButton:hover {
-                background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #764ba2, stop:1 #667eea);
                 transform: translateY(-1px);
-            }
-            QPushButton:pressed {
-                background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-            }
-            QPushButton:disabled {
-                background: #95a5a6;
-                color: #ecf0f1;
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
             }
         """)
-        self.download_button.clicked.connect(self.download_pdf)
-        self.download_button.setEnabled(file_exists)
         
         # 关闭按钮
-        close_button = QPushButton("❌ 关闭")
-        close_button.setFont(QFont("Microsoft YaHei", 10))
-        close_button.setStyleSheet("""
+        close_btn = QPushButton("✅ 关闭")
+        close_btn.setFixedSize(100, 40)
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet("""
             QPushButton {
-                background: linear-gradient(135deg, #e17055 0%, #d63031 100%);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #00b894, stop:1 #00a085);
                 color: white;
                 border: none;
-                padding: 12px 24px;
-                border-radius: 6px;
+                border-radius: 8px;
+                font-size: 11px;
                 font-weight: bold;
+                font-family: '微软雅黑';
             }
             QPushButton:hover {
-                background: linear-gradient(135deg, #d63031 0%, #e17055 100%);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #00a085, stop:1 #008f72);
                 transform: translateY(-1px);
-            }
-            QPushButton:pressed {
-                background: linear-gradient(135deg, #d63031 0%, #e17055 100%);
+                box-shadow: 0 4px 15px rgba(0, 184, 148, 0.4);
             }
         """)
-        close_button.clicked.connect(self.close)
         
-        button_layout.addWidget(self.preview_button)
-        button_layout.addWidget(self.download_button)
-        button_layout.addStretch()
-        button_layout.addWidget(close_button)
+        buttons_layout.addWidget(download_btn)
+        buttons_layout.addWidget(close_btn)
+        buttons_layout.addStretch()
+        layout.addWidget(buttons_frame)
         
-        main_layout.addLayout(button_layout)
-        self.setLayout(main_layout)
+    def create_combined_buttons(self, layout):
+        """创建合并按钮区域 - 将控制按钮和操作按钮合并为一行"""
+        combined_frame = QFrame()
+        combined_frame.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-radius: 10px;
+                border: 1px solid rgba(102, 126, 234, 0.1);
+                padding: 15px;
+            }
+        """)
+        combined_layout = QHBoxLayout(combined_frame)
+        combined_layout.setContentsMargins(10, 10, 10, 10)
+        combined_layout.setSpacing(15)
         
-    def get_file_size(self):
-        """获取文件大小"""
+        # 左侧：页面信息显示
+        self.page_info_label = QLabel("页面：0 / 0")
+        self.page_info_label.setFont(QFont("微软雅黑", 9, QFont.Bold))
+        self.page_info_label.setStyleSheet("""
+            QLabel {
+                color: #667eea;
+                background: rgba(102, 126, 234, 0.1);
+                padding: 6px 10px;
+                border-radius: 6px;
+                min-width: 80px;
+            }
+        """)
+        
+        # 缩放控制
+        zoom_label = QLabel("🔍")
+        zoom_label.setStyleSheet("color: #6c757d; font-weight: bold; font-size: 12px;")
+        
+        self.zoom_combo = QComboBox()
+        self.zoom_combo.addItems(["50%", "75%", "100%", "125%", "150%", "200%"])
+        self.zoom_combo.setCurrentText("100%")
+        self.zoom_combo.currentTextChanged.connect(self.zoom_changed)
+        self.zoom_combo.setFixedSize(65, 30)
+        self.zoom_combo.setStyleSheet("""
+            QComboBox {
+                background: white;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-family: '微软雅黑';
+                font-size: 9px;
+            }
+            QComboBox:hover {
+                border-color: #667eea;
+            }
+        """)
+        
+        # 添加左侧控件
+        combined_layout.addWidget(self.page_info_label)
+        combined_layout.addWidget(zoom_label)
+        combined_layout.addWidget(self.zoom_combo)
+        
+        # 中间弹性空间
+        combined_layout.addStretch()
+        
+        # 右侧：操作按钮
+        # 下载按钮
+        download_btn = QPushButton("💾 下载")
+        download_btn.setFixedSize(80, 35)
+        download_btn.clicked.connect(self.download_pdf)
+        download_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #667eea, stop:1 #764ba2);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 9px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #764ba2, stop:1 #667eea);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            }
+        """)
+        
+        # 关闭按钮
+        close_btn = QPushButton("✅ 关闭")
+        close_btn.setFixedSize(70, 35)
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #00b894, stop:1 #00a085);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 9px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #00a085, stop:1 #008f72);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 15px rgba(0, 184, 148, 0.4);
+            }
+        """)
+        
+        combined_layout.addWidget(download_btn)
+        combined_layout.addWidget(close_btn)
+        
+        layout.addWidget(combined_frame)
+        
+    def load_pdf(self):
+        """加载PDF文档 - 修正初始化问题"""
         try:
-            if os.path.exists(self.pdf_path):
-                size = os.path.getsize(self.pdf_path)
-                return f"{size // 1024}"
-            return "未知"
-        except:
-            return "未知"
-    
-    def get_file_time(self):
-        """获取文件创建时间"""
-        try:
-            if os.path.exists(self.pdf_path):
-                timestamp = os.path.getctime(self.pdf_path)
-                return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
-            return "未知"
-        except:
-            return "未知"
-    
-    def preview_pdf(self):
-        """预览PDF文档"""
-        try:
+            # 重置PDF标签的样式，移除虚线边框
+            self.pdf_label.setStyleSheet("""
+                QLabel {
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                    color: #6c757d;
+                    font-size: 14px;
+                }
+            """)
+            
             if not os.path.exists(self.pdf_path):
-                QMessageBox.warning(self, "文件不存在", f"找不到PDF文件：{self.pdf_path}")
+                self.pdf_label.setText("❌ PDF文件不存在\n\n请检查文件路径是否正确")
+                self.pdf_label.setAlignment(Qt.AlignCenter)
                 return
             
-            # 使用系统默认程序打开PDF
-            if sys.platform == "win32":
-                os.startfile(self.pdf_path)
-            elif sys.platform == "darwin":  # macOS
-                subprocess.run(["open", self.pdf_path])
-            else:  # Linux
-                subprocess.run(["xdg-open", self.pdf_path])
+            if not PYMUPDF_AVAILABLE:
+                self.pdf_label.setText("❌ PyMuPDF库未安装\n\n请安装PyMuPDF库以预览PDF")
+                self.pdf_label.setAlignment(Qt.AlignCenter)
+                return
             
-            print(f"✅ 已使用系统默认程序打开PDF：{self.pdf_path}")
+            # 打开PDF文档
+            self.pdf_doc = fitz.open(self.pdf_path)
+            self.total_pages = len(self.pdf_doc)
+            
+            if self.total_pages == 0:
+                self.pdf_label.setText("❌ PDF文档为空")
+                self.pdf_label.setAlignment(Qt.AlignCenter)
+                return
+            
+            # 显示第一页
+            self.show_page(0)
+            self.update_controls()
+            
+            print(f"✅ PDF加载成功：{self.total_pages}页")
             
         except Exception as e:
-            QMessageBox.critical(self, "预览失败", f"无法预览PDF文件：{str(e)}")
-            print(f"❌ 预览PDF失败：{str(e)}")
-    
+            error_msg = f"❌ 加载PDF失败\n\n错误信息：{str(e)}"
+            self.pdf_label.setText(error_msg)
+            self.pdf_label.setAlignment(Qt.AlignCenter)
+            print(f"❌ 加载PDF失败：{str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+    def show_page(self, page_num):
+        """显示指定页面 - 修正滚动和缩放问题"""
+        try:
+            if not self.pdf_doc or page_num < 0 or page_num >= self.total_pages:
+                return
+            
+            # 获取当前缩放比例
+            zoom_text = self.zoom_combo.currentText().replace('%', '')
+            zoom_factor = float(zoom_text) / 100.0
+            
+            # 获取页面
+            page = self.pdf_doc[page_num]
+            
+            # 设置缩放矩阵
+            mat = fitz.Matrix(zoom_factor, zoom_factor)
+            
+            # 渲染页面为图像
+            pix = page.get_pixmap(matrix=mat)
+            
+            # 转换为QPixmap
+            img_data = pix.tobytes("ppm")
+            pixmap = QPixmap()
+            pixmap.loadFromData(img_data)
+            
+            # 正确设置图像显示
+            self.pdf_label.setPixmap(pixmap)
+            self.pdf_label.setScaledContents(False)
+            
+            # 关键：设置标签大小为图像实际大小，这样滚动区域才能正确显示滚动条
+            self.pdf_label.resize(pixmap.size())
+            self.pdf_label.setMinimumSize(pixmap.size())
+            
+            # 更新页面信息
+            self.current_page = page_num
+            self.update_controls()
+            
+            print(f"✅ 页面 {page_num + 1} 已显示 - 图像尺寸: {pixmap.width()}x{pixmap.height()}, 缩放: {zoom_factor*100:.0f}%")
+            
+        except Exception as e:
+            print(f"❌ 显示页面失败：{str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+    def prev_page(self):
+        """上一页"""
+        if self.current_page > 0:
+            self.show_page(self.current_page - 1)
+            
+    def next_page(self):
+        """下一页"""
+        if self.current_page < self.total_pages - 1:
+            self.show_page(self.current_page + 1)
+            
+    def zoom_changed(self):
+        """缩放改变"""
+        self.show_page(self.current_page)
+        
+    def update_controls(self):
+        """更新控制显示状态"""
+        self.page_info_label.setText(f"页面：{self.current_page + 1} / {self.total_pages}")
+        
+
     def download_pdf(self):
         """下载PDF文档"""
         try:
@@ -2006,6 +2315,16 @@ class PDFPreviewDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "下载失败", f"无法下载PDF文件：{str(e)}")
             print(f"❌ 下载PDF失败：{str(e)}")
+            
+    def closeEvent(self, event):
+        """关闭事件处理"""
+        try:
+            if self.pdf_doc:
+                self.pdf_doc.close()
+                print("✅ PDF文档已关闭")
+        except Exception as e:
+            print(f"⚠️ 关闭PDF文档时出错：{str(e)}")
+        super().closeEvent(event)
 
 
 class TaskSubmissionWorker(QThread):
@@ -3687,11 +4006,12 @@ class DesktopManager(QWidget):
         
         layout.addLayout(info_layout)
         
-        # 初始化任务数据和滚动相关变量
+        # 初始化任务数据和显示相关变量
         self.current_tasks = []
+        self.current_display_task_index = 0  # 当前显示的进行中任务索引
+        self.current_display_task = None  # 当前显示的任务对象
+        # 保留旧变量以防其他地方需要兼容
         self.current_task_index = 0
-        self.task_scroll_direction = 1  # 1: 向右滚动, -1: 向左滚动
-        self.task_scroll_position = 0
         
     def create_buttons_section(self, layout):
         """创建功能按钮区域"""
@@ -3768,11 +4088,11 @@ class DesktopManager(QWidget):
         try:
             print("⏱️ 开始设置定时器...")
             
-            # 任务显示更新定时器
+            # 任务显示更新定时器 - 不再用于轮播，只用于状态同步
             self.task_timer = QTimer()
             self.task_timer.timeout.connect(self.update_task_display)
-            self.task_timer.start(3000)  # 每3秒更新（用于任务滚动）
-            print("✅ 任务显示更新定时器已启动 (3秒间隔)")
+            self.task_timer.start(10000)  # 每10秒更新（用于状态同步，不再轮播）
+            print("✅ 任务显示更新定时器已启动 (10秒间隔)")
             
             # 任务数据刷新定时器 - 减少刷新间隔以便更及时获取状态更新
             self.task_refresh_timer = QTimer()
@@ -4019,7 +4339,7 @@ class DesktopManager(QWidget):
             print(f"❌ 保存任务缓存失败: {str(e)}")
     
     def update_task_display(self):
-        """更新任务显示"""
+        """更新任务显示 - 修改：只显示当前进行中的任务，不进行轮播"""
         try:
             print(f"🎯 开始更新任务显示...")
             
@@ -4035,9 +4355,9 @@ class DesktopManager(QWidget):
             if not hasattr(self, 'current_tasks'):
                 print("⚠️ current_tasks 属性不存在，初始化为空列表")
                 self.current_tasks = []
-            if not hasattr(self, 'current_task_index'):
-                print("⚠️ current_task_index 属性不存在，初始化为0")
-                self.current_task_index = 0
+            if not hasattr(self, 'current_display_task_index'):
+                print("⚠️ current_display_task_index 属性不存在，初始化为0")
+                self.current_display_task_index = 0
                 
             if not self.current_tasks:
                 print("📋 没有任务数据，显示暂无任务")
@@ -4045,49 +4365,50 @@ class DesktopManager(QWidget):
                 self.submit_current_task_button.setEnabled(False)
                 return
             
-            print(f"📊 当前任务数量: {len(self.current_tasks)}, 当前索引: {self.current_task_index}")
+            # 过滤出进行中的任务
+            in_progress_statuses = ['待分配', '未分配', '进行中', 'pending', 'in_progress']
+            in_progress_tasks = [
+                task for task in self.current_tasks 
+                if task.get('status', task.get('assignment_status', '')).lower() in [s.lower() for s in in_progress_statuses]
+            ]
             
-            if len(self.current_tasks) == 1:
-                # 只有一个任务，直接显示
-                task = self.current_tasks[0]
-                task_name = task.get('name', task.get('task_name', '未命名任务'))
-                task_status = task.get('status', task.get('assignment_status', '未知状态'))
+            print(f"📊 总任务数量: {len(self.current_tasks)}, 进行中任务数量: {len(in_progress_tasks)}")
+            
+            if not in_progress_tasks:
+                print("📋 没有进行中的任务")
+                self.task_scroll_label.setText("暂无进行中的任务")
+                self.submit_current_task_button.setEnabled(False)
+                return
+            
+            # 确保当前显示索引有效
+            if self.current_display_task_index >= len(in_progress_tasks):
+                self.current_display_task_index = 0
+                print(f"🔄 显示索引重置为0")
+            
+            # 显示当前进行中的任务（不自动轮播）
+            current_task = in_progress_tasks[self.current_display_task_index]
+            task_name = current_task.get('name', current_task.get('task_name', '未命名任务'))
+            task_status = current_task.get('status', current_task.get('assignment_status', '未知状态'))
+            progress = current_task.get('progress', current_task.get('completion_percentage', 0))
+            
+            # 构建显示文本
+            if len(in_progress_tasks) == 1:
                 display_text = f"📋 {task_name} - {task_status}"
-                
-                print(f"📝 显示单个任务: {display_text}")
-                self.task_scroll_label.setText(display_text)
-                
-                # 根据任务状态决定是否启用提交按钮
-                can_submit = task_status.lower() in ['待分配', '未分配', '进行中', 'pending', 'in_progress']
-                self.submit_current_task_button.setEnabled(can_submit)
-                print(f"🔘 按钮状态: {'启用' if can_submit else '禁用'}")
             else:
-                # 多个任务，轮播显示
-                if self.current_task_index >= len(self.current_tasks):
-                    self.current_task_index = 0
-                    print(f"🔄 索引重置为0")
-                    
-                task = self.current_tasks[self.current_task_index]
-                task_name = task.get('name', task.get('task_name', '未命名任务'))
-                task_status = task.get('status', task.get('assignment_status', '未知状态'))
-                progress = task.get('progress', task.get('completion_percentage', 0))
-                
-                # 构建显示文本
-                display_text = f"📋 [{self.current_task_index + 1}/{len(self.current_tasks)}] {task_name} - {task_status}"
-                if progress > 0:
-                    display_text += f" ({progress}%)"
-                
-                print(f"📝 显示轮播任务: {display_text}")
-                self.task_scroll_label.setText(display_text)
-                
-                # 根据任务状态决定是否启用提交按钮
-                can_submit = task_status.lower() in ['待分配', '未分配', '进行中', 'pending', 'in_progress']
-                self.submit_current_task_button.setEnabled(can_submit)
-                print(f"🔘 按钮状态: {'启用' if can_submit else '禁用'}")
-                
-                # 移动到下一个任务
-                self.current_task_index += 1
-                print(f"➡️ 下次将显示索引: {self.current_task_index}")
+                display_text = f"📋 [{self.current_display_task_index + 1}/{len(in_progress_tasks)}] {task_name} - {task_status}"
+            
+            if progress > 0:
+                display_text += f" ({progress}%)"
+            
+            print(f"📝 显示当前进行中任务: {display_text}")
+            self.task_scroll_label.setText(display_text)
+            
+            # 始终启用提交按钮，因为显示的都是进行中的任务
+            self.submit_current_task_button.setEnabled(True)
+            print(f"🔘 按钮状态: 启用")
+            
+            # 保存当前显示的任务，供提交使用
+            self.current_display_task = current_task
                 
         except Exception as e:
             print(f"❌ 更新任务显示失败: {str(e)}")
@@ -4331,16 +4652,11 @@ class DesktopManager(QWidget):
     def submit_current_task(self):
         """提交当前显示的任务"""
         try:
-            if not self.current_tasks:
-                print("当前没有任务可提交")
+            if not hasattr(self, 'current_display_task') or not self.current_display_task:
+                print("当前没有显示的任务可提交")
                 return
                 
-            # 获取当前显示的任务索引
-            current_display_index = (self.current_task_index - 1) % len(self.current_tasks)
-            if current_display_index < 0:
-                current_display_index = 0
-                
-            current_task = self.current_tasks[current_display_index]
+            current_task = self.current_display_task
             
             # 检查任务状态是否可以提交
             task_status = current_task.get('status', current_task.get('assignment_status', '')).lower()
@@ -4348,12 +4664,53 @@ class DesktopManager(QWidget):
                 print(f"任务状态为 '{task_status}'，无法提交")
                 return
                 
+            print(f"📤 准备提交任务: {current_task.get('name', current_task.get('task_name', '未命名任务'))}")
+            
             # 提交单个任务
             selected_tasks = [current_task]
             self.start_task_submission(selected_tasks)
             
         except Exception as e:
             print(f"❌ 提交当前任务失败: {str(e)}")
+    
+    def advance_to_next_in_progress_task(self):
+        """切换到下一个进行中的任务"""
+        try:
+            print("➡️ 尝试切换到下一个进行中的任务...")
+            
+            if not hasattr(self, 'current_tasks') or not self.current_tasks:
+                print("⚠️ 没有任务数据")
+                return
+            
+            # 过滤出进行中的任务
+            in_progress_statuses = ['待分配', '未分配', '进行中', 'pending', 'in_progress']
+            in_progress_tasks = [
+                task for task in self.current_tasks 
+                if task.get('status', task.get('assignment_status', '')).lower() in [s.lower() for s in in_progress_statuses]
+            ]
+            
+            if not in_progress_tasks:
+                print("✅ 没有更多进行中的任务")
+                return
+            
+            # 确保索引存在
+            if not hasattr(self, 'current_display_task_index'):
+                self.current_display_task_index = 0
+            
+            # 切换到下一个进行中的任务
+            if len(in_progress_tasks) > 1:
+                self.current_display_task_index = (self.current_display_task_index + 1) % len(in_progress_tasks)
+                print(f"➡️ 切换到下一个任务，新索引: {self.current_display_task_index}")
+            else:
+                print("ℹ️ 只有一个进行中的任务，无需切换")
+            
+            # 立即更新显示
+            self.update_task_display()
+            
+        except Exception as e:
+            print(f"❌ 切换到下一个任务失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
             
     def show_settings_action(self):
         """显示设置"""
@@ -4869,7 +5226,7 @@ class DesktopManager(QWidget):
         
     @pyqtSlot(str) 
     def on_task_completed(self, message):
-        """任务完成回调 - 增强版：任务提交后自动刷新状态并检查是否显示PDF预览"""
+        """任务完成回调 - 增强版：任务提交后自动刷新状态、切换到下一个任务并检查是否显示PDF预览"""
         print(f"任务完成: {message}")
         
         # 显示完成对话框
@@ -4879,8 +5236,12 @@ class DesktopManager(QWidget):
         print("🔄 任务提交完成，自动刷新任务状态...")
         QTimer.singleShot(1000, self.refresh_and_update_tasks)  # 1秒后刷新，确保后端状态已更新
         
+        # 在刷新后切换到下一个进行中的任务
+        print("➡️ 准备切换到下一个进行中的任务...")
+        QTimer.singleShot(1500, self.advance_to_next_in_progress_task)  # 1.5秒后切换任务
+        
         # 检查是否所有任务都已完成，如果是则显示PDF预览
-        QTimer.singleShot(2000, self.check_and_show_pdf_preview)  # 2秒后检查PDF预览
+        QTimer.singleShot(2500, self.check_and_show_pdf_preview)  # 2.5秒后检查PDF预览
     
     def refresh_and_update_tasks(self):
         """刷新并更新任务显示"""
@@ -5058,7 +5419,7 @@ class DesktopManager(QWidget):
                 return None
             
             # 构建完整路径
-            pdf_path = os.path.join("Project_Management", pdf_filename)
+            pdf_path = os.path.join("resources", "documents", "Project_Management", pdf_filename)
             
             # 检查文件是否存在
             if os.path.exists(pdf_path):
@@ -5066,6 +5427,11 @@ class DesktopManager(QWidget):
                 return pdf_path
             else:
                 print(f"❌ PDF文件不存在：{pdf_path}")
+                # 兼容旧路径
+                old_pdf_path = os.path.join("Project_Management", pdf_filename)
+                if os.path.exists(old_pdf_path):
+                    print(f"✅ 在旧路径找到PDF文件：{old_pdf_path}")
+                    return old_pdf_path
                 return None
                 
         except Exception as e:
