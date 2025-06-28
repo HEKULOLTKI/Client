@@ -93,30 +93,68 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# ================================
 # 项目特定文件
+# ================================
+
 # 运行时数据文件
 received_data.json
+received_tasks.json
 
-# 桌面图标备份文件夹
+# 数据目录中的临时文件
+data/cache/
+data/logs/
+data/logs_original/
+data/exports/
+
+# API配置文件（可能包含敏感信息）
+# 注意：如果API.json包含敏感信息，取消下面的注释
+# resources/assets/config/API.json
+
+# 桌面图标备份
 desktop_icons_backup/
+desktop_backup/
 
 # 日志文件
 *.log
+logs/
+*.log.*
 
-# 临时文件
+# 临时文件和缓存
 *.tmp
 *.temp
+*.cache
 *~
+.cache/
+cache/
+
+# 测试输出文件
+test_output/
+test_results/
+
+# 配置文件备份
+*.config.bak
+*.json.bak
+
+# PDF导出文件（如果是临时生成的）
+# *.pdf
+
+# 数据库文件（如果有的话）
+*.db
+*.sqlite
+*.sqlite3
 
 # Windows 特定
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+$RECYCLE.BIN/
 
 # macOS 特定
 .DS_Store
 .AppleDouble
 .LSOverride
+._*
 
 # Linux 特定
 *~
@@ -126,9 +164,43 @@ Desktop.ini
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
-# 备份文件
+# 编辑器备份文件
 *.bak
 *.backup
-desktop_icons_backup/
-desktop_backup/
+*.orig
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+
+# 系统生成的文件
+.directory
+
+# 网络配置文件（如果包含敏感信息）
+network_config.json
+
+# Token和密钥文件
+*.key
+*.pem
+*.p12
+*.pfx
+token.txt
+api_keys.txt
+
+# 性能分析文件
+*.prof
+
+# 本地配置文件
+local_config.py
+local_settings.py
+
+# 用户特定配置
+user_config.json
+user_settings.json
