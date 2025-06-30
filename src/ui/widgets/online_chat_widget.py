@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLineEdit, QPushButton,
 from PyQt5.QtCore import Qt, QPoint, QSize, QTimer, QPropertyAnimation, QEasingCurve, QThread, pyqtSignal, QUrl, QMimeData
 from PyQt5.QtGui import (QFont, QIcon, QPixmap, QPainter, QColor, QPainterPath, 
                         QPen, QFontMetrics, QDesktopServices, QCursor, QBrush, QClipboard)
+from PyQt5.QtSvg import QSvgWidget
 import requests
 import time
 import json
@@ -20,6 +21,7 @@ from datetime import datetime
 from resources.assets.config import online_chat_config as config
 from src.api.token_manager import TokenManager
 from src.ui.widgets.file_upload_widget import FileUploadWidget
+from resources.assets.images.file_icons import get_file_icon_path
 
 class OnlineLoadingIndicator(QProgressBar):
     """在线聊天加载指示器"""
@@ -107,7 +109,7 @@ class OnlineChatBubble(QFrame):
         else:
             msg_container.setStyleSheet(f"""
                 QFrame {{
-                    background-color: {'#2ecc71' if is_user else '#F0F2F5'};
+                    background-color: {'#2ecc71' if is_user else 'white'};
                     border-radius: 18px;
                 }}
             """)
@@ -121,49 +123,34 @@ class OnlineChatBubble(QFrame):
         if not self.is_system_message:
             avatar = QLabel()
             avatar.setFixedSize(40, 40)
+            
+            # 获取头像路径
             if is_user:
                 # 当前用户头像：优先根据职业选择，默认使用系统架构师
                 if self.profession:
-                    avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+                    avatar_path = config.get_avatar_by_profession(self.profession)
+                    print(f"👤 用户头像: 职业={self.profession}, 路径={avatar_path}")
                 else:
-                    avatar_pixmap = QPixmap(config.get_avatar_path('user'))
+                    avatar_path = config.get_avatar_path('user')
+                    print(f"👤 用户头像: 默认路径={avatar_path}")
             else:
                 # 其他用户头像：优先根据职业选择，默认使用网络规划设计师
                 if self.profession:
-                    avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+                    avatar_path = config.get_avatar_by_profession(self.profession)
+                    print(f"👥 其他用户头像: 职业={self.profession}, 路径={avatar_path}")
                 else:
-                    avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+                    avatar_path = config.get_avatar_path('online_user')
+                    print(f"👥 其他用户头像: 默认路径={avatar_path}")
             
-            # 创建圆形遮罩
-            mask = QPixmap(40, 40)
-            mask.fill(Qt.transparent)
-            
-            painter = QPainter(mask)
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setBrush(QBrush(Qt.black))
-            painter.setPen(Qt.NoPen)
-            painter.drawEllipse(0, 0, 40, 40)
-            painter.end()
-            
-            # 缩放头像并应用圆形遮罩
-            scaled_pixmap = avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            
-            # 如果图片不是正方形，裁剪到中心
-            if scaled_pixmap.width() != scaled_pixmap.height():
-                size = min(scaled_pixmap.width(), scaled_pixmap.height())
-                x = (scaled_pixmap.width() - size) // 2
-                y = (scaled_pixmap.height() - size) // 2
-                scaled_pixmap = scaled_pixmap.copy(x, y, size, size).scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            
-            # 应用圆形遮罩
-            scaled_pixmap.setMask(mask.createMaskFromColor(Qt.transparent, Qt.MaskInColor))
-            
-            avatar.setPixmap(scaled_pixmap)
+            # 使用统一的头像处理函数
+            avatar_pixmap = config.create_rounded_avatar(avatar_path, 40)
+            avatar.setPixmap(avatar_pixmap)
             avatar.setStyleSheet("""
                 QLabel {
-                    border-radius: 20px;
-                    background-color: white;
-                    border: 2px solid #E8E8E8;
+                    background-color: transparent;
+                    border: none;
+                    padding: 0px;
+                    margin: 0px;
                 }
             """)
         
@@ -358,133 +345,80 @@ class ImageChatBubble(QFrame):
         # 创建图片消息容器
         image_container = QFrame()
         image_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        image_container.setStyleSheet(f"""
-            QFrame {{
-                background-color: {'#f8f9fa' if self.is_user else '#f8f9fa'};
-                border: 2px solid {'#2ecc71' if self.is_user else '#dee2e6'};
+        image_container.setStyleSheet("""
+            QFrame {
+                background-color: transparent;
+                border: none;
                 border-radius: 12px;
-                padding: 8px;
-            }}
+            }
         """)
         
         container_layout = QVBoxLayout(image_container)
-        container_layout.setContentsMargins(8, 8, 8, 8)
-        container_layout.setSpacing(8)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
         
-        # 图片显示区域
+                # 图片显示区域
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setStyleSheet("""
             QLabel {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 8px;
-                padding: 4px;
+                background-color: transparent;
+                border: none;
+                border-radius: 12px;
             }
         """)
         self.image_label.setMinimumSize(150, 100)
         self.image_label.setMaximumSize(self.max_image_width, self.max_image_height)
         self.image_label.setScaledContents(False)
-        
+
         # 加载提示
         self.loading_label = QLabel("🔄 正在加载图片...")
         self.loading_label.setAlignment(Qt.AlignCenter)
         self.loading_label.setFont(QFont("Microsoft YaHei UI", 9))
         self.loading_label.setStyleSheet("color: #6c757d;")
-        
-        # 文件信息
-        info_layout = QHBoxLayout()
-        info_layout.setSpacing(8)
-        
-        # 文件名
-        file_name_label = QLabel(self.file_name)
-        file_name_label.setFont(QFont("Microsoft YaHei UI", 9))
-        file_name_label.setStyleSheet("color: #495057; font-weight: bold;")
-        file_name_label.setWordWrap(True)
-        
-        # 文件大小
-        size_text = self.format_file_size(self.file_size)
-        file_size_label = QLabel(size_text)
-        file_size_label.setFont(QFont("Microsoft YaHei UI", 8))
-        file_size_label.setStyleSheet("color: #6c757d;")
-        
-        info_layout.addWidget(file_name_label)
-        info_layout.addStretch()
-        info_layout.addWidget(file_size_label)
-        
-        # 下载按钮
-        download_btn = QPushButton("💾 下载原图")
-        download_btn.setFont(QFont("Microsoft YaHei UI", 8))
-        download_btn.setFixedHeight(25)
-        download_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        download_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {'#28a745' if self.is_user else '#007bff'};
-                color: white;
-                border: none;
-                border-radius: 12px;
-                padding: 4px 12px;
-            }}
-            QPushButton:hover {{
-                background-color: {'#218838' if self.is_user else '#0056b3'};
-            }}
-            QPushButton:pressed {{
-                background-color: {'#1e7e34' if self.is_user else '#004085'};
-            }}
-        """)
-        download_btn.clicked.connect(self.download_image)
-        
+
         container_layout.addWidget(self.loading_label)
         container_layout.addWidget(self.image_label)
-        container_layout.addLayout(info_layout)
-        container_layout.addWidget(download_btn)
+        
+        # 设置图片点击事件
+        self.image_label.mousePressEvent = self.on_image_clicked
+        self.image_label.setCursor(QCursor(Qt.PointingHandCursor))
+        self.image_label.setToolTip("点击查看大图")
+        
+        # 添加操作按钮（浮动在图片上方）
+        self.setup_image_controls()
         
         # 创建头像
         avatar = QLabel()
         avatar.setFixedSize(40, 40)
+        
+        # 获取头像路径
         if self.is_user:
             # 当前用户头像：优先根据职业选择，默认使用系统架构师
             if self.profession:
-                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+                avatar_path = config.get_avatar_by_profession(self.profession)
+                print(f"🖼️ 用户图片头像: 职业={self.profession}, 路径={avatar_path}")
             else:
-                avatar_pixmap = QPixmap(config.get_avatar_path('user'))
+                avatar_path = config.get_avatar_path('user')
+                print(f"🖼️ 用户图片头像: 默认路径={avatar_path}")
         else:
             # 其他用户头像：优先根据职业选择，默认使用网络规划设计师
             if self.profession:
-                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+                avatar_path = config.get_avatar_by_profession(self.profession)
+                print(f"🖼️ 其他用户图片头像: 职业={self.profession}, 路径={avatar_path}")
             else:
-                avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+                avatar_path = config.get_avatar_path('online_user')
+                print(f"🖼️ 其他用户图片头像: 默认路径={avatar_path}")
         
-        # 创建圆形遮罩
-        mask = QPixmap(40, 40)
-        mask.fill(Qt.transparent)
-        
-        painter = QPainter(mask)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QBrush(Qt.black))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(0, 0, 40, 40)
-        painter.end()
-        
-        # 缩放头像并应用圆形遮罩
-        scaled_pixmap = avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-        
-        # 如果图片不是正方形，裁剪到中心
-        if scaled_pixmap.width() != scaled_pixmap.height():
-            size = min(scaled_pixmap.width(), scaled_pixmap.height())
-            x = (scaled_pixmap.width() - size) // 2
-            y = (scaled_pixmap.height() - size) // 2
-            scaled_pixmap = scaled_pixmap.copy(x, y, size, size).scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        
-        # 应用圆形遮罩
-        scaled_pixmap.setMask(mask.createMaskFromColor(Qt.transparent, Qt.MaskInColor))
-        
-        avatar.setPixmap(scaled_pixmap)
+        # 使用统一的头像处理函数
+        avatar_pixmap = config.create_rounded_avatar(avatar_path, 40)
+        avatar.setPixmap(avatar_pixmap)
         avatar.setStyleSheet("""
             QLabel {
-                border-radius: 20px;
-                background-color: white;
-                border: 2px solid #E8E8E8;
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
             }
         """)
         
@@ -588,6 +522,79 @@ class ImageChatBubble(QFrame):
         
         return QSize(new_width, new_height)
     
+    def setup_image_controls(self):
+        """设置图片操作控件"""
+        # 创建按钮容器
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(8, 5, 8, 5)
+        controls_layout.setSpacing(8)
+        
+        # 查看大图按钮
+        view_btn = QPushButton("🔍")
+        view_btn.setFixedSize(30, 30)
+        view_btn.setFont(QFont("Microsoft YaHei UI", 12))
+        view_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        view_btn.setToolTip("查看大图")
+        view_btn.clicked.connect(self.view_full_image)
+        
+        # 下载按钮 - 使用SVG图标
+        download_btn = QPushButton()
+        download_btn.setFixedSize(30, 30)
+        download_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        download_btn.setToolTip("下载图片")
+        download_btn.clicked.connect(self.download_image)
+        
+        # 设置SVG图标
+        download_icon_path = os.path.join(os.path.dirname(get_file_icon_path('download')), '下载.svg')
+        if os.path.exists(download_icon_path):
+            download_btn.setIcon(QIcon(download_icon_path))
+            download_btn.setIconSize(QSize(18, 18))
+        else:
+            # 如果SVG文件不存在，回退到emoji
+            download_btn.setText("📥")
+            download_btn.setFont(QFont("Microsoft YaHei UI", 12))
+        
+        # 按钮样式
+        button_style = f"""
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 0.9);
+                border: 1px solid #dee2e6;
+                border-radius: 15px;
+                color: #495057;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: white;
+                border-color: #adb5bd;
+                transform: scale(1.1);
+            }}
+            QPushButton:pressed {{
+                background-color: #f8f9fa;
+                transform: scale(0.95);
+            }}
+        """
+        
+        view_btn.setStyleSheet(button_style)
+        download_btn.setStyleSheet(button_style)
+        
+        controls_layout.addStretch()
+        controls_layout.addWidget(view_btn)
+        controls_layout.addWidget(download_btn)
+        
+        # 添加到容器的底部
+        container_layout = self.image_label.parent().layout()
+        container_layout.addLayout(controls_layout)
+    
+    def view_full_image(self):
+        """查看大图"""
+        if hasattr(self.image_label, 'pixmap') and self.image_label.pixmap() and not self.image_label.pixmap().isNull():
+            self.show_full_image(self.image_label.pixmap())
+    
+    def on_image_clicked(self, event):
+        """图片点击事件"""
+        if event.button() == Qt.LeftButton:
+            self.view_full_image()
+    
     def show_full_image(self, pixmap):
         """显示大图"""
         dialog = ImageViewDialog(pixmap, self.file_name, self)
@@ -686,62 +693,366 @@ class ImageDownloadThread(QThread):
             self.load_failed.emit(str(e))
 
 class ImageViewDialog(QDialog):
-    """图片查看对话框"""
+    """增强版图片查看对话框 - 支持缩放、拖拽和全屏"""
     def __init__(self, pixmap, filename, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"查看图片 - {filename}")
-        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
+        self.setWindowTitle(f"图片查看器 - {filename}")
+        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint | Qt.WindowMaximizeButtonHint)
         self.setModal(True)
         
-        # 计算合适的对话框大小
+        # 图片相关属性
+        self.original_pixmap = pixmap
+        self.filename = filename
+        self.scale_factor = 1.0
+        self.min_scale = 0.1
+        self.max_scale = 5.0
+        self.is_dragging = False
+        self.drag_start_pos = QPoint()
+        self.last_mouse_pos = QPoint()
+        self.drag_sensitivity = 1.0  # 拖动灵敏度
+        
+        # 计算初始窗口大小
         screen = QApplication.primaryScreen().geometry()
-        max_width = int(screen.width() * 0.8)
-        max_height = int(screen.height() * 0.8)
+        initial_width = min(pixmap.width() + 100, int(screen.width() * 0.9))
+        initial_height = min(pixmap.height() + 150, int(screen.height() * 0.9))
+        self.resize(initial_width, initial_height)
         
-        # 计算图片显示尺寸
-        img_size = pixmap.size()
-        if img_size.width() > max_width or img_size.height() > max_height:
-            scale_ratio = min(max_width / img_size.width(), max_height / img_size.height())
-            display_size = QSize(int(img_size.width() * scale_ratio), int(img_size.height() * scale_ratio))
-        else:
-            display_size = img_size
+        # 居中显示
+        self.move(
+            (screen.width() - initial_width) // 2,
+            (screen.height() - initial_height) // 2
+        )
         
-        self.setFixedSize(display_size.width() + 40, display_size.height() + 80)
+        self.setup_ui()
+        self.update_image()
         
-        # 布局
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+    def setup_ui(self):
+        """设置用户界面"""
+        # 主布局
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+        
+        # 滚动区域
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setAlignment(Qt.AlignCenter)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: 2px solid #dee2e6;
+                border-radius: 8px;
+                background-color: #f8f9fa;
+            }
+        """)
         
         # 图片标签
-        image_label = QLabel()
-        image_label.setAlignment(Qt.AlignCenter)
-        image_label.setPixmap(pixmap.scaled(display_size, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        image_label.setStyleSheet("""
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setStyleSheet("""
             QLabel {
-                border: 1px solid #dee2e6;
                 background-color: white;
-            }
-        """)
-        
-        # 关闭按钮
-        close_btn = QPushButton("关闭")
-        close_btn.setFixedHeight(35)
-        close_btn.clicked.connect(self.close)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
                 border: none;
-                border-radius: 4px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #5a6268;
             }
         """)
+        self.image_label.setMinimumSize(200, 200)
         
-        layout.addWidget(image_label)
-        layout.addWidget(close_btn)
+        # 设置拖拽
+        self.image_label.setMouseTracking(True)
+        self.image_label.setCursor(QCursor(Qt.OpenHandCursor))  # 显示可拖拽光标
+        self.image_label.mousePressEvent = self.mouse_press_event
+        self.image_label.mouseMoveEvent = self.mouse_move_event
+        self.image_label.mouseReleaseEvent = self.mouse_release_event
+        self.image_label.mouseDoubleClickEvent = self.mouse_double_click_event
+        
+        # 启用图片标签的拖拽功能
+        self.image_label.setAcceptDrops(False)  # 不接受外部拖放
+        self.scroll_area.setMouseTracking(True)  # 滚动区域也启用鼠标跟踪
+        
+        self.scroll_area.setWidget(self.image_label)
+        
+        # 信息栏
+        info_layout = QHBoxLayout()
+        self.info_label = QLabel()
+        self.update_info_label()
+        self.info_label.setStyleSheet("""
+            QLabel {
+                color: #6c757d;
+                font-size: 12px;
+                padding: 5px;
+            }
+        """)
+        info_layout.addWidget(self.info_label)
+        info_layout.addStretch()
+        
+        # 添加到主布局
+        main_layout.addWidget(self.scroll_area)
+        main_layout.addLayout(info_layout)
+        
+    def update_image(self):
+        """更新图片显示"""
+        if self.original_pixmap.isNull():
+            return
+            
+        # 计算缩放后的尺寸
+        scaled_size = self.original_pixmap.size() * self.scale_factor
+        
+        # 缩放图片
+        scaled_pixmap = self.original_pixmap.scaled(
+            scaled_size, 
+            Qt.KeepAspectRatio, 
+            Qt.SmoothTransformation
+        )
+        
+        self.image_label.setPixmap(scaled_pixmap)
+        self.image_label.resize(scaled_pixmap.size())
+        
+        # 更新信息
+        self.update_info_label()
+        
+    def update_info_label(self):
+        """更新信息标签"""
+        original_size = self.original_pixmap.size()
+        current_size = self.original_pixmap.size() * self.scale_factor
+        
+        info_text = (f"📁 {self.filename} | "
+                    f"📐 原始: {original_size.width()}×{original_size.height()} | "
+                    f"📏 当前: {int(current_size.width())}×{int(current_size.height())} | "
+                    f"🔍 {int(self.scale_factor * 100)}% | "
+                    f"💡 双击重置位置，Ctrl+滚轮缩放，方向键移动")
+        
+        self.info_label.setText(info_text)
+        
+    def zoom_in(self):
+        """放大"""
+        new_scale = min(self.scale_factor * 1.25, self.max_scale)
+        if new_scale != self.scale_factor:
+            self.scale_factor = new_scale
+            self.update_image()
+            
+    def zoom_out(self):
+        """缩小"""
+        new_scale = max(self.scale_factor / 1.25, self.min_scale)
+        if new_scale != self.scale_factor:
+            self.scale_factor = new_scale
+            self.update_image()
+            
+    def reset_zoom(self):
+        """重置缩放"""
+        self.scale_factor = 1.0
+        self.update_image()
+        
+    def fit_to_window(self):
+        """适应窗口大小"""
+        if self.original_pixmap.isNull():
+            return
+            
+        # 获取可用空间
+        available_size = self.scroll_area.size() - QSize(20, 20)  # 留出边距
+        
+        # 计算适合的缩放比例
+        scale_w = available_size.width() / self.original_pixmap.width()
+        scale_h = available_size.height() / self.original_pixmap.height()
+        
+        self.scale_factor = min(scale_w, scale_h, 1.0)  # 不超过原始大小
+        self.scale_factor = max(self.scale_factor, self.min_scale)
+        
+        self.update_image()
+        
+    def save_image(self):
+        """保存图片到本地"""
+        try:
+            from PyQt5.QtWidgets import QFileDialog
+            import os
+            
+            # 获取文件扩展名
+            _, ext = os.path.splitext(self.filename)
+            if not ext:
+                ext = '.png'
+                
+            # 构建文件过滤器
+            filter_text = f"图片文件 (*{ext});;PNG文件 (*.png);;JPEG文件 (*.jpg);;所有文件 (*.*)"
+            
+            # 弹出保存对话框
+            save_path, _ = QFileDialog.getSaveFileName(
+                self, 
+                "保存图片", 
+                self.filename,
+                filter_text
+            )
+            
+            if save_path:
+                # 保存原始图片
+                if self.original_pixmap.save(save_path):
+                    from PyQt5.QtWidgets import QMessageBox
+                    QMessageBox.information(self, "保存成功", f"图片已保存到:\n{save_path}")
+                else:
+                    from PyQt5.QtWidgets import QMessageBox
+                    QMessageBox.warning(self, "保存失败", "无法保存图片")
+                    
+        except Exception as e:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "保存失败", f"保存图片时发生错误:\n{str(e)}")
+            
+    def mouse_press_event(self, event):
+        """鼠标按下事件 - 增强版拖动"""
+        if event.button() == Qt.LeftButton:
+            self.is_dragging = True
+            self.drag_start_pos = event.globalPos()  # 使用全局坐标
+            self.last_mouse_pos = event.globalPos()
+            self.image_label.setCursor(QCursor(Qt.ClosedHandCursor))
+            
+            # 记录当前滚动条位置
+            self.initial_h_scroll = self.scroll_area.horizontalScrollBar().value()
+            self.initial_v_scroll = self.scroll_area.verticalScrollBar().value()
+            
+            event.accept()  # 接受事件
+            
+    def mouse_move_event(self, event):
+        """鼠标移动事件 - 增强版拖动"""
+        if self.is_dragging and event.buttons() == Qt.LeftButton:
+            # 计算总的移动距离（从开始拖动的位置）
+            current_pos = event.globalPos()
+            total_delta = current_pos - self.drag_start_pos
+            
+            # 应用拖动灵敏度
+            delta_x = int(total_delta.x() * self.drag_sensitivity)
+            delta_y = int(total_delta.y() * self.drag_sensitivity)
+            
+            # 获取滚动条
+            h_scroll = self.scroll_area.horizontalScrollBar()
+            v_scroll = self.scroll_area.verticalScrollBar()
+            
+            # 计算新的滚动位置（基于初始位置）
+            new_h_value = self.initial_h_scroll - delta_x
+            new_v_value = self.initial_v_scroll - delta_y
+            
+            # 确保在有效范围内
+            new_h_value = max(h_scroll.minimum(), min(h_scroll.maximum(), new_h_value))
+            new_v_value = max(v_scroll.minimum(), min(v_scroll.maximum(), new_v_value))
+            
+            # 设置滚动条位置
+            h_scroll.setValue(new_h_value)
+            v_scroll.setValue(new_v_value)
+            
+            event.accept()  # 接受事件
+        elif not self.is_dragging:
+            # 如果没有拖动，显示正常光标
+            self.image_label.setCursor(QCursor(Qt.OpenHandCursor))
+            
+    def mouse_release_event(self, event):
+        """鼠标释放事件 - 增强版拖动"""
+        if event.button() == Qt.LeftButton:
+            self.is_dragging = False
+            self.image_label.setCursor(QCursor(Qt.OpenHandCursor))
+            
+            # 清理拖动状态
+            self.drag_start_pos = QPoint()
+            self.last_mouse_pos = QPoint()
+            
+            event.accept()  # 接受事件
+            
+    def mouse_double_click_event(self, event):
+        """鼠标双击事件 - 重置图片位置到中心"""
+        if event.button() == Qt.LeftButton:
+            # 重置滚动条到中心位置
+            h_scroll = self.scroll_area.horizontalScrollBar()
+            v_scroll = self.scroll_area.verticalScrollBar()
+            
+            # 计算中心位置
+            h_center = (h_scroll.maximum() + h_scroll.minimum()) // 2
+            v_center = (v_scroll.maximum() + v_scroll.minimum()) // 2
+            
+            h_scroll.setValue(h_center)
+            v_scroll.setValue(v_center)
+            
+            # 提供视觉反馈
+            self.status_feedback("图片已重置到中心位置")
+            
+            event.accept()
+            
+    def status_feedback(self, message):
+        """显示状态反馈信息"""
+        try:
+            # 临时显示状态信息
+            original_text = self.info_label.text()
+            self.info_label.setText(f"✓ {message}")
+            self.info_label.setStyleSheet("""
+                QLabel {
+                    color: #28a745;
+                    font-size: 12px;
+                    padding: 5px;
+                    font-weight: bold;
+                }
+            """)
+            
+            # 2秒后恢复原始信息
+            QTimer.singleShot(2000, lambda: [
+                self.info_label.setText(original_text),
+                self.info_label.setStyleSheet("""
+                    QLabel {
+                        color: #6c757d;
+                        font-size: 12px;
+                        padding: 5px;
+                    }
+                """)
+            ])
+        except:
+            pass  # 忽略错误，避免影响主要功能
+            
+    def wheelEvent(self, event):
+        """鼠标滚轮事件"""
+        if event.modifiers() == Qt.ControlModifier:
+            # Ctrl + 滚轮进行缩放
+            angle_delta = event.angleDelta().y()
+            if angle_delta > 0:
+                self.zoom_in()
+            else:
+                self.zoom_out()
+        else:
+            # 普通滚动
+            super().wheelEvent(event)
+            
+    def keyPressEvent(self, event):
+        """键盘事件 - 支持方向键拖动"""
+        if event.modifiers() == Qt.ControlModifier:
+            if event.key() == Qt.Key_Plus or event.key() == Qt.Key_Equal:
+                self.zoom_in()
+            elif event.key() == Qt.Key_Minus:
+                self.zoom_out()
+            elif event.key() == Qt.Key_0:
+                self.reset_zoom()
+            elif event.key() == Qt.Key_F:
+                self.fit_to_window()
+        elif event.key() == Qt.Key_Escape:
+            self.close()
+        elif event.key() in [Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down]:
+            # 方向键移动图片
+            self.move_image_with_keys(event.key())
+        else:
+            super().keyPressEvent(event)
+            
+    def move_image_with_keys(self, key):
+        """使用方向键移动图片"""
+        h_scroll = self.scroll_area.horizontalScrollBar()
+        v_scroll = self.scroll_area.verticalScrollBar()
+        
+        step = 50  # 移动步长
+        
+        if key == Qt.Key_Left:
+            h_scroll.setValue(h_scroll.value() - step)
+        elif key == Qt.Key_Right:
+            h_scroll.setValue(h_scroll.value() + step)
+        elif key == Qt.Key_Up:
+            v_scroll.setValue(v_scroll.value() - step)
+        elif key == Qt.Key_Down:
+            v_scroll.setValue(v_scroll.value() + step)
+        else:
+            super().keyPressEvent(event)
+            
+    def resizeEvent(self, event):
+        """窗口大小改变事件"""
+        super().resizeEvent(event)
+        # 可以在这里添加自动适应窗口的逻辑
 
 class FileChatBubble(QFrame):
     """文件消息气泡组件 - 支持点击下载"""
@@ -760,7 +1071,6 @@ class FileChatBubble(QFrame):
         self.content = file_info.get('content', f"📎 {self.file_name}")
         
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.setCursor(QCursor(Qt.PointingHandCursor))
         
         self.setStyleSheet("""
             FileChatBubble {
@@ -771,8 +1081,138 @@ class FileChatBubble(QFrame):
         
         self.setup_ui()
         
+    def get_file_type_style(self):
+        """根据文件类型获取专门的样式配置"""
+        if not self.file_name:
+            return self.get_default_style()
+        
+        file_ext = os.path.splitext(self.file_name.lower())[1]
+        
+        # 获取对应的 SVG 图标路径
+        icon_path = get_file_icon_path(self.file_name)
+        
+        # PDF文件 - 白色主题（统一样式）
+        if file_ext in ['.pdf']:
+            return {
+                'icon_path': icon_path,
+                'name': 'PDF文档',
+                'bg_color': 'white',
+                'icon_bg': '#c0392b' if self.is_user else '#bd2130',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#c0392b'
+            }
+        # Word文档 - 白色主题（统一样式）
+        elif file_ext in ['.doc', '.docx']:
+            return {
+                'icon_path': icon_path,
+                'name': 'Word文档',
+                'bg_color': 'white',
+                'icon_bg': '#2980b9' if self.is_user else '#0056b3',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#2980b9'
+            }
+        # Excel表格 - 白色主题（统一样式）
+        elif file_ext in ['.xls', '.xlsx']:
+            return {
+                'icon_path': icon_path,
+                'name': 'Excel表格',
+                'bg_color': 'white',
+                'icon_bg': '#229954' if self.is_user else '#1e7e34',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#229954'
+            }
+        # PowerPoint演示 - 白色主题（统一样式）
+        elif file_ext in ['.ppt', '.pptx']:
+            return {
+                'icon_path': icon_path,
+                'name': 'PPT演示',
+                'bg_color': 'white',
+                'icon_bg': '#e67e22' if self.is_user else '#e8590c',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#e67e22'
+            }
+        # 文本文件 - 白色主题（统一样式）
+        elif file_ext in ['.txt', '.md', '.rtf']:
+            return {
+                'icon_path': icon_path,
+                'name': '文本文档',
+                'bg_color': 'white',
+                'icon_bg': '#6c757d' if self.is_user else '#5a6268',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#6c757d'
+            }
+        # 代码文件 - 白色主题（统一样式）
+        elif file_ext in ['.py', '.js', '.html', '.css', '.json', '.xml', '.yml', '.yaml', '.java', '.cpp', '.c']:
+            return {
+                'icon_path': icon_path,
+                'name': '代码文件',
+                'bg_color': 'white',
+                'icon_bg': '#8e44ad' if self.is_user else '#59359a',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#8e44ad'
+            }
+        # 压缩文件 - 白色主题（统一样式）
+        elif file_ext in ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2']:
+            return {
+                'icon_path': icon_path,
+                'name': '压缩文件',
+                'bg_color': 'white',
+                'icon_bg': '#d4af37' if self.is_user else '#e0a800',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#d4af37'
+            }
+        # 音频文件 - 白色主题（统一样式）
+        elif file_ext in ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma']:
+            return {
+                'icon_path': icon_path,
+                'name': '音频文件',
+                'bg_color': 'white',
+                'icon_bg': '#c2185b' if self.is_user else '#b02a5b',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#c2185b'
+            }
+        # 视频文件 - 白色主题（统一样式）
+        elif file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm']:
+            return {
+                'icon_path': icon_path,
+                'name': '视频文件',
+                'bg_color': 'white',
+                'icon_bg': '#34495e' if self.is_user else '#495057',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#34495e'
+            }
+        # 图片文件 - 白色主题（统一样式）
+        elif file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']:
+            return {
+                'icon_path': icon_path,
+                'name': '图片文件',
+                'bg_color': 'white',
+                'icon_bg': '#16a085' if self.is_user else '#1ba085',
+                'text_color': '#1C1C1C',  # 改为深色文字
+                'border_color': '#16a085'
+            }
+        else:
+            return self.get_default_style()
+    
+    def get_default_style(self):
+        """默认文件样式（统一样式）"""
+        # 获取默认的未知文件图标
+        icon_path = get_file_icon_path('unknown')
+        
+        return {
+            'icon_path': icon_path,
+            'name': '文件',
+            'bg_color': 'white',
+            'icon_bg': '#7f8c8d' if self.is_user else '#5a6268',
+            'text_color': '#1C1C1C',  # 改为深色文字
+            'border_color': '#7f8c8d'
+        }
+    
     def setup_ui(self):
         """设置UI界面"""
+        # 获取文件类型样式
+        file_style = self.get_file_type_style()
+        
         # 主布局
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -802,124 +1242,175 @@ class FileChatBubble(QFrame):
         msg_layout.setContentsMargins(0, 0, 0, 0)
         msg_layout.setSpacing(10)
         
-        # 创建文件消息容器
+        # 创建文件消息容器 - 使用统一样式（无边框）
         file_container = QFrame()
         file_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         file_container.setStyleSheet(f"""
             QFrame {{
-                background-color: {'#27ae60' if self.is_user else '#ecf0f1'};
-                border: 2px solid {'#2ecc71' if self.is_user else '#bdc3c7'};
+                background-color: {file_style['bg_color']};
+                border: none;
                 border-radius: 18px;
-                padding: 10px;
-            }}
-            QFrame:hover {{
-                background-color: {'#229954' if self.is_user else '#d5dbdb'};
-                border-color: {'#27ae60' if self.is_user else '#95a5a6'};
             }}
         """)
         
         container_layout = QVBoxLayout(file_container)
-        container_layout.setContentsMargins(15, 10, 15, 10)
+        container_layout.setContentsMargins(15, 12, 15, 12)
         container_layout.setSpacing(8)
         
-        # 文件图标和名称行
-        file_header = QHBoxLayout()
-        file_header.setSpacing(10)
+        # 文件显示布局
+        file_layout = QHBoxLayout()
+        file_layout.setSpacing(12)
         
-        # 文件图标
-        file_icon = QLabel(self.get_file_icon())
-        file_icon.setFont(QFont("Microsoft YaHei UI", 20))
-        file_icon.setFixedSize(40, 40)
-        file_icon.setAlignment(Qt.AlignCenter)
-        file_icon.setStyleSheet(f"""
+        # 文件图标容器
+        icon_container = QLabel()
+        icon_container.setFixedSize(80, 80)
+        icon_container.setStyleSheet("""
+            QLabel {
+                background-color: transparent;
+                border-radius: 40px;
+                border: none;
+            }
+        """)
+        
+        # 创建一个内部容器来显示 SVG 图标
+        icon_inner_layout = QVBoxLayout(icon_container)
+        icon_inner_layout.setContentsMargins(15, 15, 15, 15)
+        icon_inner_layout.setAlignment(Qt.AlignCenter)
+        
+        # 加载并显示 SVG 图标
+        svg_icon = QSvgWidget(file_style['icon_path'])
+        svg_icon.setFixedSize(50, 50)  # SVG 图标大小
+        
+        # 设置 SVG 样式，确保背景透明
+        svg_icon.setStyleSheet("""
+            QSvgWidget {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        
+        icon_inner_layout.addWidget(svg_icon)
+        
+        # 文件信息布局
+        file_info_layout = QVBoxLayout()
+        file_info_layout.setSpacing(4)
+        
+        # 文件类型标签
+        file_type_label = QLabel(file_style['name'])
+        file_type_label.setFont(QFont("Microsoft YaHei UI", 13, QFont.Bold))
+        file_type_label.setStyleSheet(f"""
             QLabel {{
-                background-color: {'rgba(255,255,255,0.2)' if self.is_user else 'white'};
-                border-radius: 20px;
-                color: {'white' if self.is_user else '#2c3e50'};
+                color: {file_style['text_color']};
+                background: transparent;
             }}
         """)
         
-        # 文件信息
-        file_info_layout = QVBoxLayout()
-        file_info_layout.setSpacing(2)
+        # 文件名标签（截断显示）
+        file_name_display = self.file_name
+        if len(file_name_display) > 20:
+            file_name_display = file_name_display[:17] + "..."
         
-        # 文件名
-        file_name_label = QLabel(self.file_name)
-        file_name_label.setFont(QFont("Microsoft YaHei UI", 10, QFont.Bold))
+        file_name_label = QLabel(file_name_display)
+        file_name_label.setFont(QFont("Microsoft YaHei UI", 10))
         file_name_label.setStyleSheet(f"""
             QLabel {{
-                color: {'white' if self.is_user else '#2c3e50'};
+                color: {file_style['text_color']};
                 background: transparent;
+                opacity: 0.8;
             }}
         """)
-        file_name_label.setWordWrap(True)
         
-        # 文件大小
+        # 文件大小标签
         size_text = self.format_file_size(self.file_size)
         file_size_label = QLabel(size_text)
-        file_size_label.setFont(QFont("Microsoft YaHei UI", 8))
+        file_size_label.setFont(QFont("Microsoft YaHei UI", 9))
         file_size_label.setStyleSheet(f"""
             QLabel {{
-                color: {'rgba(255,255,255,0.8)' if self.is_user else '#7f8c8d'};
+                color: {file_style['text_color']};
                 background: transparent;
+                opacity: 0.7;
             }}
         """)
         
+        file_info_layout.addWidget(file_type_label)
         file_info_layout.addWidget(file_name_label)
         file_info_layout.addWidget(file_size_label)
+        file_info_layout.addStretch()
         
-        file_header.addWidget(file_icon)
-        file_header.addLayout(file_info_layout)
-        file_header.addStretch()
+        file_layout.addWidget(icon_container)
+        file_layout.addLayout(file_info_layout)
         
-        # 下载按钮
-        download_btn = QPushButton("📥 点击下载")
-        download_btn.setFont(QFont("Microsoft YaHei UI", 9))
-        download_btn.setFixedHeight(30)
+        # 下载按钮 - 使用SVG图标
+        download_btn = QPushButton()
+        download_btn.setFixedSize(40, 40)
         download_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        download_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {'rgba(255,255,255,0.2)' if self.is_user else '#3498db'};
-                color: {'white' if self.is_user else 'white'};
-                border: {'1px solid rgba(255,255,255,0.3)' if self.is_user else 'none'};
-                border-radius: 15px;
-                padding: 5px 15px;
-            }}
-            QPushButton:hover {{
-                background-color: {'rgba(255,255,255,0.3)' if self.is_user else '#2980b9'};
-            }}
-            QPushButton:pressed {{
-                background-color: {'rgba(255,255,255,0.1)' if self.is_user else '#21618c'};
-            }}
+        download_btn.setToolTip("下载文件")
+        
+        # 设置SVG图标
+        download_icon_path = os.path.join(os.path.dirname(get_file_icon_path('download')), '下载.svg')
+        if os.path.exists(download_icon_path):
+            download_btn.setIcon(QIcon(download_icon_path))
+            download_btn.setIconSize(QSize(20, 20))
+        else:
+            # 如果SVG文件不存在，回退到emoji
+            download_btn.setText("📥")
+            download_btn.setFont(QFont("Microsoft YaHei UI", 14))
+        
+        download_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #666666;
+                border: none;
+                border-radius: 20px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 0, 0, 0.1);
+                color: #333333;
+                transform: scale(1.05);
+            }
+            QPushButton:pressed {
+                background-color: rgba(0, 0, 0, 0.2);
+                transform: scale(0.95);
+            }
         """)
         download_btn.clicked.connect(self.download_file)
         
-        container_layout.addLayout(file_header)
-        container_layout.addWidget(download_btn)
+        file_layout.addWidget(download_btn)
+        
+        container_layout.addLayout(file_layout)
         
         # 创建头像
         avatar = QLabel()
         avatar.setFixedSize(40, 40)
+        
+        # 获取头像路径
         if self.is_user:
             # 当前用户头像：优先根据职业选择，默认使用系统架构师
             if self.profession:
-                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+                avatar_path = config.get_avatar_by_profession(self.profession)
+                print(f"📎 用户文件头像: 职业={self.profession}, 路径={avatar_path}")
             else:
-                avatar_pixmap = QPixmap(config.get_avatar_path('user'))
+                avatar_path = config.get_avatar_path('user')
+                print(f"📎 用户文件头像: 默认路径={avatar_path}")
         else:
             # 其他用户头像：优先根据职业选择，默认使用网络规划设计师
             if self.profession:
-                avatar_pixmap = QPixmap(config.get_avatar_by_profession(self.profession))
+                avatar_path = config.get_avatar_by_profession(self.profession)
+                print(f"📎 其他用户文件头像: 职业={self.profession}, 路径={avatar_path}")
             else:
-                avatar_pixmap = QPixmap(config.get_avatar_path('online_user'))
+                avatar_path = config.get_avatar_path('online_user')
+                print(f"📎 其他用户文件头像: 默认路径={avatar_path}")
         
-        avatar.setPixmap(avatar_pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        # 使用统一的头像处理函数
+        avatar_pixmap = config.create_rounded_avatar(avatar_path, 40)
+        avatar.setPixmap(avatar_pixmap)
         avatar.setStyleSheet("""
             QLabel {
-                border-radius: 20px;
-                background-color: white;
-                padding: 2px;
-                border: 2px solid #E8E8E8;
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
             }
         """)
         
@@ -950,40 +1441,8 @@ class FileChatBubble(QFrame):
             layout.addLayout(msg_layout)
     
     def get_file_icon(self):
-        """根据文件类型返回对应的图标"""
-        if not self.file_name:
-            return "📄"
-        
-        file_ext = os.path.splitext(self.file_name.lower())[1]
-        
-        # 图片文件
-        if file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']:
-            return "🖼️"
-        # 文档文件
-        elif file_ext in ['.pdf']:
-            return "📕"
-        elif file_ext in ['.doc', '.docx']:
-            return "📘"
-        elif file_ext in ['.xls', '.xlsx']:
-            return "📗"
-        elif file_ext in ['.ppt', '.pptx']:
-            return "📙"
-        elif file_ext in ['.txt']:
-            return "📝"
-        # 代码文件
-        elif file_ext in ['.py', '.js', '.html', '.css', '.json', '.xml', '.yml', '.yaml']:
-            return "💻"
-        # 压缩文件
-        elif file_ext in ['.zip', '.rar', '.7z', '.tar', '.gz']:
-            return "🗜️"
-        # 音频文件
-        elif file_ext in ['.mp3', '.wav', '.flac', '.aac']:
-            return "🎵"
-        # 视频文件
-        elif file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv']:
-            return "🎬"
-        else:
-            return "📄"
+        """根据文件类型返回对应的图标路径 - 使用新的 SVG 图标系统"""
+        return self.get_file_type_style()['icon_path']
     
     def format_file_size(self, size_bytes):
         """格式化文件大小"""
@@ -1044,9 +1503,8 @@ class FileChatBubble(QFrame):
             QMessageBox.critical(self, "下载失败", f"文件下载失败：{str(e)}")
     
     def mousePressEvent(self, event):
-        """鼠标点击事件 - 整个气泡都可以点击下载"""
-        if event.button() == Qt.LeftButton:
-            self.download_file()
+        """鼠标点击事件 - 已禁用下载功能"""
+        # 不再处理下载，只调用父类方法
         super().mousePressEvent(event)
 
 class PasteEnabledLineEdit(QLineEdit):
@@ -1841,6 +2299,10 @@ class OnlineChatWidget(QWidget):
         # 初始化Token管理器
         self.token_manager = TokenManager()
         
+        # 初始化用户身份缓存系统
+        self.user_profession_cache = {}  # 用户名 -> 职业映射
+        self.user_avatar_cache = {}      # 用户名 -> 头像路径映射
+        
         # 初始化心跳定时器
         self.heartbeat_timer = QTimer()
         
@@ -1864,7 +2326,110 @@ class OnlineChatWidget(QWidget):
         
         # 自动加载用户token
         self.load_user_from_token()
+        
+        # 初始化用户身份映射
+        self.initialize_user_identity_mapping()
     
+    def initialize_user_identity_mapping(self):
+        """初始化用户身份映射"""
+        try:
+            # 从token管理器获取当前用户职业信息
+            user_info = self.token_manager.get_user_info()
+            if user_info and user_info.get('username') and user_info.get('role'):
+                username = user_info.get('username')
+                profession = user_info.get('role')
+                self.update_user_profession_cache(username, profession)
+                print(f"🎯 从token初始化用户身份: {username} -> {profession}")
+            
+            # 从桌面管理器获取角色数据（如果可用）
+            self.load_user_profession_from_desktop_manager()
+            
+            print(f"✅ 用户身份映射初始化完成，缓存用户数: {len(self.user_profession_cache)}")
+        except Exception as e:
+            print(f"❌ 用户身份映射初始化失败: {str(e)}")
+    
+    def load_user_profession_from_desktop_manager(self):
+        """从桌面管理器加载用户职业信息"""
+        try:
+            # 尝试从received_tasks.json文件读取用户角色信息
+            import json
+            if os.path.exists('received_tasks.json'):
+                with open('received_tasks.json', 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    user_info = data.get('user_info', {})
+                    user_data = user_info.get('user', {})
+                    if user_data.get('username') and user_data.get('role'):
+                        username = user_data.get('username')
+                        profession = user_data.get('role')
+                        self.update_user_profession_cache(username, profession)
+                        print(f"🎯 从桌面管理器加载用户身份: {username} -> {profession}")
+        except Exception as e:
+            print(f"⚠️ 从桌面管理器加载用户身份失败: {str(e)}")
+    
+    def update_user_profession_cache(self, username, profession):
+        """更新用户职业缓存"""
+        if username and profession:
+            self.user_profession_cache[username] = profession
+            # 同时缓存头像路径
+            avatar_path = config.get_avatar_by_profession(profession)
+            self.user_avatar_cache[username] = avatar_path
+            print(f"📝 用户职业缓存更新: {username} -> {profession} -> {avatar_path}")
+    
+    def get_user_profession(self, username):
+        """获取用户职业信息"""
+        if not username:
+            return None
+            
+        # 1. 从缓存中查找
+        if username in self.user_profession_cache:
+            profession = self.user_profession_cache[username]
+            print(f"🎯 从缓存获取用户职业: {username} -> {profession}")
+            return profession
+        
+        # 2. 如果是当前用户，从token获取
+        if username == self.current_user:
+            try:
+                user_info = self.token_manager.get_user_info()
+                if user_info and user_info.get('role'):
+                    profession = user_info.get('role')
+                    self.update_user_profession_cache(username, profession)
+                    print(f"🎯 从token获取当前用户职业: {username} -> {profession}")
+                    return profession
+            except Exception as e:
+                print(f"⚠️ 从token获取用户职业失败: {e}")
+        
+        # 3. 使用配置文件中的智能职业识别系统
+        profession = config.get_profession_by_priority(username)
+        if profession:
+            self.update_user_profession_cache(username, profession)
+            print(f"🎯 智能识别用户职业: {username} -> {profession}")
+            return profession
+        
+        # 4. 兜底：返回默认网络规划设计师
+        profession = '网络规划设计师'
+        self.update_user_profession_cache(username, profession)
+        print(f"🎯 使用兜底职业: {username} -> {profession}")
+        return profession
+    
+    
+    def get_user_avatar_path(self, username, profession=None):
+        """获取用户头像路径"""
+        # 1. 从缓存中查找
+        if username in self.user_avatar_cache:
+            return self.user_avatar_cache[username]
+        
+        # 2. 根据职业获取头像
+        if not profession:
+            profession = self.get_user_profession(username)
+        
+        if profession:
+            avatar_path = config.get_avatar_by_profession(profession)
+            self.user_avatar_cache[username] = avatar_path
+            return avatar_path
+        
+        # 3. 返回默认头像
+        return config.get_avatar_path('online_user')
+
     def load_user_from_token(self):
         """从token加载用户信息"""
         try:
@@ -2051,7 +2616,7 @@ class OnlineChatWidget(QWidget):
         """)
         
         self.chat_area = QWidget()
-        self.chat_area.setStyleSheet("background-color: white;")
+        self.chat_area.setStyleSheet("background-color: #F0F2F5;")
         self.chat_layout = QVBoxLayout(self.chat_area)
         self.chat_layout.setAlignment(Qt.AlignTop)
         self.chat_layout.setSpacing(10)
@@ -2153,6 +2718,50 @@ class OnlineChatWidget(QWidget):
         """)
         self.file_btn.clicked.connect(self.upload_file)
         
+        # 电话按钮
+        self.call_btn = QPushButton("电话")
+        self.call_btn.setFixedHeight(35)
+        self.call_btn.setIcon(QIcon(os.path.join(os.path.dirname(__file__), '../../../resources/assets/images/file_icons/电话.svg')))
+        self.call_btn.setIconSize(QSize(16, 16))
+        self.call_btn.setFont(QFont("Microsoft YaHei UI", 9))
+        self.call_btn.setToolTip("语音通话")
+        self.call_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f8f9fa;
+                color: #666666;
+                border: 1px solid #E8E8E8;
+                border-radius: 17px;
+                padding: 5px 15px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+            }
+        """)
+        self.call_btn.clicked.connect(self.start_voice_call)
+        
+        # 视频电话按钮
+        self.video_call_btn = QPushButton("视频")
+        self.video_call_btn.setFixedHeight(35)
+        self.video_call_btn.setIcon(QIcon(os.path.join(os.path.dirname(__file__), '../../../resources/assets/images/file_icons/视频电话.svg')))
+        self.video_call_btn.setIconSize(QSize(16, 16))
+        self.video_call_btn.setFont(QFont("Microsoft YaHei UI", 9))
+        self.video_call_btn.setToolTip("视频通话")
+        self.video_call_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f8f9fa;
+                color: #666666;
+                border: 1px solid #E8E8E8;
+                border-radius: 17px;
+                padding: 5px 15px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+            }
+        """)
+        self.video_call_btn.clicked.connect(self.start_video_call)
+        
         # 刷新按钮
         self.refresh_btn = QPushButton("🔄 刷新")
         self.refresh_btn.setFixedHeight(35)
@@ -2190,6 +2799,8 @@ class OnlineChatWidget(QWidget):
         self.reconnect_btn.clicked.connect(self.reset_connection)
         
         toolbar_layout.addWidget(self.file_btn)
+        toolbar_layout.addWidget(self.call_btn)
+        toolbar_layout.addWidget(self.video_call_btn)
         toolbar_layout.addWidget(self.refresh_btn)
         toolbar_layout.addWidget(self.reconnect_btn)
         toolbar_layout.addStretch()
@@ -2291,6 +2902,8 @@ class OnlineChatWidget(QWidget):
             sender_name="系统", 
             timestamp="--:--"
         )
+        # 确保错误消息也滚动到底部
+        self.force_scroll_to_bottom(force_always=True)
     
     def load_initial_data(self):
         """加载初始数据"""
@@ -2331,10 +2944,88 @@ class OnlineChatWidget(QWidget):
             
         self.chat_layout.addWidget(bubble)
         
-        # 滚动到底部
-        QTimer.singleShot(100, lambda: self.scroll.verticalScrollBar().setValue(
-            self.scroll.verticalScrollBar().maximum()
-        ))
+        # 智能滚动到底部（只有用户在底部时才滚动）
+        self.force_scroll_to_bottom()
+        
+    def is_user_at_bottom(self):
+        """检测用户是否在聊天底部附近"""
+        try:
+            scroll_bar = self.scroll.verticalScrollBar()
+            # 如果用户距离底部不超过100像素，认为用户在底部
+            threshold = 100
+            current_pos = scroll_bar.value()
+            max_pos = scroll_bar.maximum()
+            return (max_pos - current_pos) <= threshold
+        except:
+            return True  # 异常情况下默认认为在底部
+    
+    def force_scroll_to_bottom(self, force_send=False, force_receive=False, force_always=False):
+        """智能滚动到聊天最底部 - 只有在用户在底部时才滚动"""
+        try:
+            # 检查用户是否在底部附近
+            user_at_bottom = self.is_user_at_bottom()
+            
+            # 只有在以下情况才滚动：
+            # 1. 用户在底部附近
+            # 2. 强制滚动（force_always=True）
+            # 3. 用户发送消息（force_send=True）
+            should_scroll = user_at_bottom or force_always or force_send
+            
+            if not should_scroll:
+                if force_receive:
+                    print("📥 用户正在查看历史消息，跳过自动滚动")
+                return
+            
+            scroll_bar = self.scroll.verticalScrollBar()
+            
+            # 立即滚动到底部
+            scroll_bar.setValue(scroll_bar.maximum())
+            
+            # 多次尝试确保滚动成功
+            def delayed_scroll_1():
+                scroll_bar.setValue(scroll_bar.maximum())
+                self.scroll.ensureVisible(0, scroll_bar.maximum(), 0, 0)
+                
+            def delayed_scroll_2():
+                scroll_bar.setValue(scroll_bar.maximum())
+                self.scroll.verticalScrollBar().setSliderPosition(scroll_bar.maximum())
+                
+            def delayed_scroll_3():
+                # 最终确保滚动
+                scroll_bar.setValue(scroll_bar.maximum())
+                if force_send:
+                    print("📤 强制滚动到底部: 发送消息")
+                elif force_receive:
+                    print("📥 智能滚动到底部: 接收消息")
+                elif force_always:
+                    print("📜 强制滚动到底部: 系统消息")
+                else:
+                    print("📜 智能滚动到底部: 添加消息")
+            
+            # 分层延迟滚动，确保可靠性
+            QTimer.singleShot(50, delayed_scroll_1)   # 50ms后第一次尝试
+            QTimer.singleShot(100, delayed_scroll_2)  # 100ms后第二次尝试
+            QTimer.singleShot(200, delayed_scroll_3)  # 200ms后最终确认
+            
+            # 对于发送消息，额外增加强制滚动
+            if force_send or force_always:
+                def final_force_scroll():
+                    scroll_bar.setValue(scroll_bar.maximum())
+                    # 强制刷新滚动区域
+                    self.scroll.update()
+                    self.chat_area.update()
+                    
+                QTimer.singleShot(300, final_force_scroll)  # 300ms后最终强制滚动
+                
+        except Exception as e:
+            print(f"⚠️ 滚动到底部失败: {e}")
+            # 备用滚动方法
+            try:
+                QTimer.singleShot(100, lambda: self.scroll.verticalScrollBar().setValue(
+                    self.scroll.verticalScrollBar().maximum()
+                ))
+            except:
+                pass
         
     def send_message(self):
         """发送消息"""
@@ -2353,6 +3044,8 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保连接错误消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
             return
             
         # 在线模式
@@ -2442,6 +3135,8 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保错误消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
             return
         
         # 显示上传状态
@@ -2451,6 +3146,8 @@ class OnlineChatWidget(QWidget):
             sender_name="系统", 
             timestamp=datetime.now().strftime("%H:%M")
         )
+        # 确保上传状态消息也滚动到底部
+        self.force_scroll_to_bottom(force_always=True)
         
         if self.connection_error:
             # 连接断开时提示错误
@@ -2460,6 +3157,8 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保连接错误消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
         else:
             # 在线模式通过API上传文件
             print(f"📤 通过API上传文件: {file_path}")
@@ -2514,6 +3213,8 @@ class OnlineChatWidget(QWidget):
             sender_name="系统", 
             timestamp=datetime.now().strftime("%H:%M")
         )
+        # 确保重连消息也滚动到底部
+        self.force_scroll_to_bottom(force_always=True)
         
         # 延迟500ms后开始重连
         QTimer.singleShot(500, self.check_server_connection)
@@ -2551,27 +3252,81 @@ class OnlineChatWidget(QWidget):
         
         user_layout = QHBoxLayout(user_frame)
         user_layout.setContentsMargins(8, 8, 8, 8)
-        user_layout.setSpacing(0)
+        user_layout.setSpacing(10)
         
-        # 用户信息（不显示头像）
-        user_info_layout = QVBoxLayout()
-        user_info_layout.setSpacing(3)
+        # 创建用户头像
+        avatar = QLabel()
+        avatar.setFixedSize(30, 30)  # 在线用户列表中使用较小的头像
         
+        # 获取用户信息
         username = user_info.get('username', '未知用户')
+        
+        # 🎯 使用智能用户身份识别系统
+        # 1. 获取用户职业信息
+        profession = self.get_user_profession(username)
+        
+        # 2. 获取对应的头像路径
+        avatar_path = self.get_user_avatar_path(username, profession)
+        
+        print(f"👥 在线用户头像映射: {username} -> {profession} -> {avatar_path}")
+        
+        # 使用统一的头像处理函数
+        avatar_pixmap = config.create_rounded_avatar(avatar_path, 30)
+        avatar.setPixmap(avatar_pixmap)
+        avatar.setStyleSheet("""
+            QLabel {
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+            }
+        """)
+        
+        # 创建用户信息布局（头像+用户名+职业标识）
+        user_info_layout = QVBoxLayout()
+        user_info_layout.setSpacing(2)
+        
+        # 用户名标签
         user_label = QLabel(username)
         user_label.setFont(QFont("Microsoft YaHei UI", 10, QFont.Bold))
         user_label.setStyleSheet("color: #1C1C1C;")
         
-        status_text = "在线"
-        status_label = QLabel(status_text)
-        status_label.setFont(QFont("Microsoft YaHei UI", 8))
-        status_label.setStyleSheet("color: #2ecc71; font-weight: normal;")
+        # 职业标识标签（可选显示）
+        if profession and profession != '未知角色':
+            # 简化职业显示
+            profession_display = profession.replace('设计师', '').replace('师', '').replace('系统', '')
+            if len(profession_display) > 4:
+                profession_display = profession_display[:4] + '...'
+            
+            profession_label = QLabel(profession_display)
+            profession_label.setFont(QFont("Microsoft YaHei UI", 8))
+            profession_label.setStyleSheet("""
+                QLabel {
+                    color: #666666;
+                    background-color: #f0f2f5;
+                    padding: 2px 6px;
+                    border-radius: 8px;
+                    font-size: 8px;
+                }
+            """)
+            profession_label.setAlignment(Qt.AlignCenter)
+            
+            user_info_layout.addWidget(user_label)
+            user_info_layout.addWidget(profession_label)
+        else:
+            user_info_layout.addWidget(user_label)
+            user_info_layout.addStretch()
         
-        user_info_layout.addWidget(user_label)
-        user_info_layout.addWidget(status_label)
-        
+        # 主布局：头像 + 用户信息
+        user_layout.addWidget(avatar)
         user_layout.addLayout(user_info_layout)
         user_layout.addStretch()
+        
+        # 为用户框添加工具提示
+        tooltip_text = f"用户: {username}"
+        if profession and profession != '未知角色':
+            tooltip_text += f"\n职业: {profession}"
+        user_frame.setToolTip(tooltip_text)
         
         self.users_layout.addWidget(user_frame)
         
@@ -2636,10 +3391,8 @@ class OnlineChatWidget(QWidget):
             
         self.chat_layout.addWidget(bubble)
         
-        # 滚动到底部
-        QTimer.singleShot(100, lambda: self.scroll.verticalScrollBar().setValue(
-            self.scroll.verticalScrollBar().maximum()
-        ))
+        # 强制滚动到底部（发送消息）
+        self.force_scroll_to_bottom(force_send=True)
         
         print(f"✅ 消息发送成功: '{content[:30]}...' | 类型: '{message_type}' | 发送者: '{sender_name}' | 角色: '{sender_role}' | ID: '{message_id}'")
         
@@ -2747,10 +3500,8 @@ class OnlineChatWidget(QWidget):
             # 调试输出
             print(f"📝 添加消息: '{content[:20]}...' | 类型: '{message_type}' | 发送者: '{sender_name}' | 角色: '{sender_role}' | ID: '{message_id}' | 是当前用户: {is_user}")
         
-        # 滚动到底部
-        QTimer.singleShot(100, lambda: self.scroll.verticalScrollBar().setValue(
-            self.scroll.verticalScrollBar().maximum()
-        ))
+        # 强制滚动到底部（接收消息）
+        self.force_scroll_to_bottom(force_receive=True)
         
         print(f"✅ 消息加载完成，共显示 {self.chat_layout.count()} 条消息")
     
@@ -2860,6 +3611,8 @@ class OnlineChatWidget(QWidget):
             sender_name="系统", 
             timestamp=datetime.now().strftime("%H:%M")
         )
+        # 确保错误消息也滚动到底部
+        self.force_scroll_to_bottom(force_always=True)
         
     # 窗口事件处理
     def paintEvent(self, event):
@@ -2915,6 +3668,8 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保错误消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
             return
         
         # 处理每个文件
@@ -2926,6 +3681,8 @@ class OnlineChatWidget(QWidget):
                     sender_name="系统", 
                     timestamp=datetime.now().strftime("%H:%M")
                 )
+                # 确保错误消息也滚动到底部
+                self.force_scroll_to_bottom(force_always=True)
                 continue
                 
             if not os.path.isfile(file_path):
@@ -2935,6 +3692,8 @@ class OnlineChatWidget(QWidget):
                     sender_name="系统", 
                     timestamp=datetime.now().strftime("%H:%M")
                 )
+                # 确保错误消息也滚动到底部
+                self.force_scroll_to_bottom(force_always=True)
                 continue
             
             # 检查文件大小
@@ -2946,18 +3705,11 @@ class OnlineChatWidget(QWidget):
                     sender_name="系统", 
                     timestamp=datetime.now().strftime("%H:%M")
                 )
+                # 确保错误消息也滚动到底部
+                self.force_scroll_to_bottom(force_always=True)
                 continue
             
-            # 显示上传提示
-            filename = os.path.basename(file_path)
-            self.add_message(
-                f"正在上传粘贴的文件: {filename}", 
-                is_user=False, 
-                sender_name="系统", 
-                timestamp=datetime.now().strftime("%H:%M")
-            )
-            
-            # 上传文件
+            # 直接上传文件，不显示系统提示
             self.api.upload_file_and_send(file_path, self.api.room_id)
     
     def handle_pasted_image(self, pixmap):
@@ -2972,6 +3724,8 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保错误消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
             return
         
         try:
@@ -2984,15 +3738,7 @@ class OnlineChatWidget(QWidget):
             if pixmap.save(temp_path, "PNG"):
                 print(f"📋 图片已保存到临时文件: {temp_path}")
                 
-                # 显示上传提示
-                self.add_message(
-                    "正在上传粘贴的图片...", 
-                    is_user=False, 
-                    sender_name="系统", 
-                    timestamp=datetime.now().strftime("%H:%M")
-                )
-                
-                # 上传文件
+                # 直接上传文件，不显示系统提示
                 self.api.upload_file_and_send(temp_path, self.api.room_id)
                 
                 # 设置定时器清理临时文件
@@ -3005,6 +3751,8 @@ class OnlineChatWidget(QWidget):
                     sender_name="系统", 
                     timestamp=datetime.now().strftime("%H:%M")
                 )
+                # 确保错误消息也滚动到底部
+                self.force_scroll_to_bottom(force_always=True)
                 
         except Exception as e:
             print(f"❌ 处理粘贴图片失败: {str(e)}")
@@ -3014,6 +3762,8 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保错误消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
     
     def cleanup_temp_file(self, file_path):
         """清理临时文件"""
@@ -3034,6 +3784,8 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保下载开始消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
             
             # 让用户选择保存位置
             from PyQt5.QtWidgets import QFileDialog
@@ -3063,6 +3815,8 @@ class OnlineChatWidget(QWidget):
                     sender_name="系统", 
                     timestamp=datetime.now().strftime("%H:%M")
                 )
+                # 确保取消消息也滚动到底部
+                self.force_scroll_to_bottom(force_always=True)
                 return
             
             # 使用API下载文件
@@ -3075,6 +3829,8 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保下载成功消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
             
             # 询问是否打开文件所在文件夹
             from PyQt5.QtWidgets import QMessageBox
@@ -3109,3 +3865,282 @@ class OnlineChatWidget(QWidget):
                 sender_name="系统", 
                 timestamp=datetime.now().strftime("%H:%M")
             )
+            # 确保下载失败消息也滚动到底部
+            self.force_scroll_to_bottom(force_always=True)
+    
+    def start_voice_call(self):
+        """启动语音通话"""
+        try:
+            # 创建语音通话选择对话框
+            dialog = CallSelectionDialog(self, call_type="voice")
+            dialog.set_online_users(self.online_users)
+            
+            if dialog.exec_() == QDialog.Accepted:
+                selected_user = dialog.get_selected_user()
+                if selected_user:
+                    self.initiate_call(selected_user, "voice")
+        except Exception as e:
+            print(f"启动语音通话失败: {str(e)}")
+            QMessageBox.warning(self, "错误", f"启动语音通话失败: {str(e)}")
+    
+    def start_video_call(self):
+        """启动视频通话"""
+        try:
+            # 创建视频通话选择对话框
+            dialog = CallSelectionDialog(self, call_type="video")
+            dialog.set_online_users(self.online_users)
+            
+            if dialog.exec_() == QDialog.Accepted:
+                selected_user = dialog.get_selected_user()
+                if selected_user:
+                    self.initiate_call(selected_user, "video")
+        except Exception as e:
+            print(f"启动视频通话失败: {str(e)}")
+            QMessageBox.warning(self, "错误", f"启动视频通话失败: {str(e)}")
+    
+    def initiate_call(self, target_user, call_type):
+        """发起通话"""
+        try:
+            call_type_name = "语音通话" if call_type == "voice" else "视频通话"
+            
+            # 在聊天中显示通话消息
+            self.add_message(
+                f"正在发起与 {target_user} 的{call_type_name}...", 
+                True, 
+                self.current_user, 
+                datetime.now().strftime("%H:%M"),
+                "system"
+            )
+            
+            # 这里可以集成实际的通话功能
+            # 例如：启动WebRTC、调用第三方通话API等
+            
+            # 目前显示功能提示
+            reply = QMessageBox.question(
+                self,
+                "通话功能",
+                f"即将与 {target_user} 进行{call_type_name}\n\n"
+                f"通话功能正在开发中，是否要在浏览器中打开通话链接？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 这里可以打开实际的通话链接
+                # 目前打开一个示例链接
+                call_url = f"https://meet.jit.si/call-{target_user}-{int(time.time())}"
+                webbrowser.open(call_url)
+                
+                self.add_message(
+                    f"已在浏览器中打开{call_type_name}链接", 
+                    False, 
+                    "系统", 
+                    datetime.now().strftime("%H:%M"),
+                    "system"
+                )
+            else:
+                self.add_message(
+                    f"已取消与 {target_user} 的{call_type_name}", 
+                    False, 
+                    "系统", 
+                    datetime.now().strftime("%H:%M"),
+                    "system"
+                )
+                
+        except Exception as e:
+            print(f"发起通话失败: {str(e)}")
+            self.add_message(
+                f"发起通话失败: {str(e)}", 
+                False, 
+                "系统", 
+                datetime.now().strftime("%H:%M"),
+                "system"
+            )
+
+
+class CallSelectionDialog(QDialog):
+    """通话用户选择对话框"""
+    
+    def __init__(self, parent=None, call_type="voice"):
+        super().__init__(parent)
+        self.call_type = call_type
+        self.online_users = []
+        self.selected_user = None
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """设置界面"""
+        call_type_name = "语音通话" if self.call_type == "voice" else "视频通话"
+        self.setWindowTitle(f"选择{call_type_name}对象")
+        self.setFixedSize(400, 500)
+        self.setStyleSheet("""
+            QDialog {
+                background-color: white;
+                border-radius: 10px;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # 标题
+        title_label = QLabel(f"选择要进行{call_type_name}的用户")
+        title_label.setFont(QFont("Microsoft YaHei UI", 14, QFont.Bold))
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("color: #333; margin-bottom: 10px;")
+        layout.addWidget(title_label)
+        
+        # 图标
+        icon_label = QLabel()
+        icon_path = os.path.join(os.path.dirname(__file__), 
+                                f'../../../resources/assets/images/file_icons/{"电话" if self.call_type == "voice" else "视频电话"}.svg')
+        if os.path.exists(icon_path):
+            icon_label.setPixmap(QIcon(icon_path).pixmap(48, 48))
+        icon_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(icon_label)
+        
+        # 用户列表
+        self.user_list = QWidget()
+        self.user_list.setStyleSheet("""
+            QWidget {
+                background-color: #f8f9fa;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+        
+        self.user_layout = QVBoxLayout(self.user_list)
+        self.user_layout.setContentsMargins(10, 10, 10, 10)
+        self.user_layout.setSpacing(5)
+        
+        # 滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(self.user_list)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarNever)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+        """)
+        layout.addWidget(scroll_area)
+        
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        
+        self.cancel_btn = QPushButton("取消")
+        self.cancel_btn.setFixedHeight(35)
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f8f9fa;
+                color: #666;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+                padding: 8px 20px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #e9ecef;
+            }
+        """)
+        self.cancel_btn.clicked.connect(self.reject)
+        
+        self.call_btn = QPushButton(f"开始{call_type_name}")
+        self.call_btn.setFixedHeight(35)
+        self.call_btn.setEnabled(False)
+        self.call_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 8px 20px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover:enabled {
+                background-color: #218838;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        self.call_btn.clicked.connect(self.accept)
+        
+        button_layout.addWidget(self.cancel_btn)
+        button_layout.addStretch()
+        button_layout.addWidget(self.call_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def set_online_users(self, users):
+        """设置在线用户列表"""
+        self.online_users = users
+        self.update_user_list()
+    
+    def update_user_list(self):
+        """更新用户列表显示"""
+        # 清空现有用户
+        for i in reversed(range(self.user_layout.count())):
+            child = self.user_layout.itemAt(i).widget()
+            if child:
+                child.setParent(None)
+        
+        if not self.online_users:
+            # 没有在线用户
+            no_users_label = QLabel("暂无在线用户")
+            no_users_label.setAlignment(Qt.AlignCenter)
+            no_users_label.setStyleSheet("color: #999; padding: 20px;")
+            self.user_layout.addWidget(no_users_label)
+            return
+        
+        # 添加用户选项
+        self.user_buttons = []
+        for user in self.online_users:
+            user_btn = QPushButton(user)
+            user_btn.setCheckable(True)
+            user_btn.setFixedHeight(40)
+            user_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #333;
+                    border: 1px solid #dee2e6;
+                    border-radius: 5px;
+                    padding: 8px 15px;
+                    text-align: left;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #f8f9fa;
+                    border-color: #007bff;
+                }
+                QPushButton:checked {
+                    background-color: #007bff;
+                    color: white;
+                    border-color: #007bff;
+                }
+            """)
+            user_btn.clicked.connect(lambda checked, username=user: self.select_user(username))
+            self.user_layout.addWidget(user_btn)
+            self.user_buttons.append(user_btn)
+        
+        self.user_layout.addStretch()
+    
+    def select_user(self, username):
+        """选择用户"""
+        self.selected_user = username
+        
+        # 取消其他用户的选中状态
+        for btn in self.user_buttons:
+            if btn.text() != username:
+                btn.setChecked(False)
+        
+        # 启用通话按钮
+        self.call_btn.setEnabled(True)
+    
+    def get_selected_user(self):
+        """获取选中的用户"""
+        return self.selected_user
