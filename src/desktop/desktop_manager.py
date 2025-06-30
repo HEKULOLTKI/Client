@@ -27,6 +27,7 @@ import logging
 import time
 from datetime import datetime
 import re
+import threading
 
 # PDF处理相关导入
 try:
@@ -3472,6 +3473,11 @@ class DesktopManager(QWidget):
         self.notification_timer.start(1000)
         print("⏰ 任务通知定时器已启动")
         
+        # 添加退出状态控制
+        self._is_exiting = False
+        self._browser_launched = False
+        self._exit_lock = threading.Lock()
+        
     def setup_data_receivers(self):
         """设置增强的数据接收器"""
         try:
@@ -5488,7 +5494,14 @@ class DesktopManager(QWidget):
         
     def exit_application(self):
         """退出应用程序并启动全屏浏览器"""
-        print("开始退出desktop_manager应用...")
+        # 使用锁防止重复退出
+        with self._exit_lock:
+            if self._is_exiting:
+                print("⚠️ 退出进程已在进行中，忽略重复调用")
+                return
+            
+            self._is_exiting = True
+            print("🔄 开始退出desktop_manager应用...")
         
         # 再次确保JSON文件被清理（双重保险）
         self.cleanup_json_files()
@@ -5496,8 +5509,9 @@ class DesktopManager(QWidget):
         # 步骤1：清理资源 - 关闭所有子窗口
         self.close_all_windows()
         
-        # 步骤2：启动独立过渡页面，然后启动全屏浏览器
-        self.start_independent_transition_and_browser()
+        # 步骤2：启动独立过渡页面和浏览器（确保只启动一次）
+        if not self._browser_launched:
+            self.start_independent_transition_and_browser()
         
         # 步骤3：退出desktop_manager应用
         QTimer.singleShot(100, QApplication.quit)
@@ -5530,6 +5544,10 @@ class DesktopManager(QWidget):
         
     def start_independent_transition_and_browser(self):
         """启动增强过渡页面（包含桌面图标还原），然后启动全屏浏览器"""
+        if self._browser_launched:
+            print("⚠️ 浏览器已启动，避免重复启动")
+            return
+        
         try:
             # 获取项目根目录
             current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -5556,39 +5574,47 @@ class DesktopManager(QWidget):
                     break
             
             if not script_path:
-                print("警告：找不到任何过渡页面脚本，直接启动全屏浏览器")
+                print("⚠️ 找不到任何过渡页面脚本，直接启动全屏浏览器")
                 self.launch_fullscreen_browser_directly()
                 return
             
-            # 启动过渡页面进程
+            # 启动过渡页面进程（只做UI过渡，不重复启动浏览器）
             if script_type == "enhanced":
-                # 启动增强过渡页面进程（包含桌面图标还原）
+                # 启动增强过渡页面进程（包含桌面图标还原，但不启动浏览器）
                 subprocess.Popen([
                     sys.executable, 
                     script_path,
                     "正在关闭云桌面...",
-                    "5000",  # 增加持续时间，因为需要执行图标还原
-                    "--restore"
+                    "3000",  # 缩短时间，因为不需要启动浏览器
+                    "--exit-mode"  # 使用退出模式，不启动浏览器
                 ])
-                print("🚀 增强过渡页面已启动，将执行桌面文件还原并启动全屏浏览器")
+                print("🚀 增强过渡页面已启动，将执行桌面文件还原（不启动浏览器）")
             else:
-                # 启动基础过渡页面进程
+                # 启动基础过渡页面进程（不启动浏览器）
                 subprocess.Popen([
                     sys.executable, 
                     script_path,
                     "正在关闭云桌面...",
-                    "3000",
-                    "--launch-browser"
+                    "2000",  # 缩短时间
+                    "--exit-mode"  # 使用退出模式，不启动浏览器
                 ])
-                print("🚀 基础过渡页面已启动，将在3秒后启动全屏浏览器")
+                print("🚀 基础过渡页面已启动，执行UI过渡（不启动浏览器）")
+            
+            # 立即启动浏览器（与过渡页面并行运行）
+            print("🚀 正在立即启动浏览器...")
+            self.launch_fullscreen_browser_directly()
             
         except Exception as e:
-            print(f"启动过渡页面失败: {str(e)}")
-            print("回退到直接启动全屏浏览器")
+            print(f"❌ 启动过渡页面失败: {str(e)}")
+            print("🔄 回退到直接启动全屏浏览器")
             self.launch_fullscreen_browser_directly()
     
     def launch_fullscreen_browser_directly(self):
         """直接启动全屏浏览器（备用方案）"""
+        if self._browser_launched:
+            print("⚠️ 浏览器已启动，避免重复启动")
+            return
+        
         try:
             # 获取项目根目录
             current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -5599,6 +5625,7 @@ class DesktopManager(QWidget):
                 print("🚀 使用新的main.py启动全屏浏览器...")
                 subprocess.Popen([sys.executable, main_py_path, "browser"])
                 print("✅ 全屏浏览器已通过main.py启动")
+                self._browser_launched = True  # 成功启动后设置标志
                 return
             
             # 备用方案：查找旧的fullscreen_browser.py
@@ -5617,22 +5644,26 @@ class DesktopManager(QWidget):
             if browser_path:
                 subprocess.Popen([sys.executable, browser_path])
                 print("✅ 全屏浏览器已直接启动")
+                self._browser_launched = True  # 成功启动后设置标志
             else:
                 print("❌ 找不到全屏浏览器文件")
                 
         except Exception as e:
             print(f"❌ 启动全屏浏览器失败: {str(e)}")
+            # 启动失败不设置标志，确保可以重试
         
     def launch_fullscreen_and_exit(self):
         """启动全屏浏览器并关闭桌面管理器 - 已弃用，保留兼容性"""
-        print("注意：launch_fullscreen_and_exit方法已弃用，请使用新的退出流程")
-        self.exit_application()
+        print("⚠️ 注意：launch_fullscreen_and_exit方法已弃用，请使用新的退出流程")
+        if not self._is_exiting:
+            self.exit_application()
         
     def close_all_and_exit(self):
         """关闭所有窗口并退出 - 已弃用，保留兼容性"""
-        print("注意：close_all_and_exit方法已弃用，请使用新的退出流程")
-        self.exit_application()
-        
+        print("⚠️ 注意：close_all_and_exit方法已弃用，请使用新的退出流程")
+        if not self._is_exiting:
+            self.exit_application()
+    
     def mousePressEvent(self, event):
         """鼠标按下事件 - 支持拖拽"""
         if event.button() == Qt.LeftButton:

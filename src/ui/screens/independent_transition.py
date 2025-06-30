@@ -216,10 +216,24 @@ def start_desktop_manager():
         print(f"启动 desktop_manager 时出错: {str(e)}")
         return False
 
+# 全局变量控制浏览器启动状态  
+_browser_launched = False
+_browser_launch_lock = threading.Lock()
+
 def start_fullscreen_browser():
     """启动全屏浏览器程序"""
+    global _browser_launched
+    
+    # 使用锁防止重复启动
+    with _browser_launch_lock:
+        if _browser_launched:
+            print("⚠️ 浏览器已启动，避免重复启动")
+            return True
+        
+        _browser_launched = True
+    
     try:
-        print("正在启动全屏浏览器...")
+        print("🚀 正在启动全屏浏览器...")
         
         # 获取项目根目录
         current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -248,7 +262,7 @@ def start_fullscreen_browser():
                     sys.executable, main_py_path, "browser"
                 ])
             
-            print(f"全屏浏览器已启动，进程ID: {process.pid}")
+            print(f"✅ 全屏浏览器已启动，进程ID: {process.pid}")
             print("✅ 通过main.py启动fullscreen_browser成功")
             return True
         
@@ -274,8 +288,11 @@ def start_fullscreen_browser():
                 break
         
         if not browser_path:
-            print("错误：找不到 fullscreen_browser 程序文件")
-            print("提示：请确保main.py存在或fullscreen_browser.py在正确位置")
+            print("❌ 错误：找不到 fullscreen_browser 程序文件")
+            print("💡 提示：请确保main.py存在或fullscreen_browser.py在正确位置")
+            # 重置标志以便重试
+            with _browser_launch_lock:
+                _browser_launched = False
             return False
         
         # 根据文件类型选择启动方式
@@ -311,14 +328,20 @@ def start_fullscreen_browser():
                     browser_path
                 ])
         
-        print(f"全屏浏览器已启动，进程ID: {process.pid}")
+        print(f"✅ 全屏浏览器已启动，进程ID: {process.pid}")
         return True
         
     except FileNotFoundError:
-        print("错误：找不到 fullscreen_browser 程序或Python解释器")
+        print("❌ 错误：找不到 fullscreen_browser 程序或Python解释器")
+        # 重置标志以便重试
+        with _browser_launch_lock:
+            _browser_launched = False
         return False
     except Exception as e:
-        print(f"启动 fullscreen_browser 时出错: {str(e)}")
+        print(f"❌ 启动 fullscreen_browser 时出错: {str(e)}")
+        # 重置标志以便重试
+        with _browser_launch_lock:
+            _browser_launched = False
         return False
 
 def main():

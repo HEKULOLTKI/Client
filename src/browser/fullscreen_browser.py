@@ -1051,24 +1051,35 @@ class APIServer(QObject):
                 if project_root not in sys.path:
                     sys.path.insert(0, project_root)
                 
-                from src.ui.widgets.pdf_viewer_widget import show_pdf_viewer
+                from src.ui.widgets.pdf_viewer_widget import PDFPreviewDialog
                 print("✅ 成功导入PDF查看器组件")
                 
-                # 在新线程中显示PDF查看器（避免阻塞主线程）
-                def show_viewer():
+                # 使用QTimer确保在主线程中打开PDF查看器
+                def show_pdf_in_main_thread():
                     try:
-                        show_pdf_viewer(file_path, None)
+                        # 获取当前活动的QApplication实例
+                        app = QApplication.instance()
+                        if not app:
+                            print("❌ 没有找到QApplication实例")
+                            self._fallback_open_pdf(file_path)
+                            return
+                        
+                        # 创建并显示PDF查看器对话框
+                        viewer = PDFPreviewDialog(file_path, "PDF预览", None)
+                        viewer.show()
                         print(f"✅ PDF弹窗查看器已显示: {file_path}")
+                        
                     except Exception as e:
                         print(f"❌ 显示PDF查看器失败: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
                         # 如果弹窗失败，尝试使用系统默认程序
                         self._fallback_open_pdf(file_path)
                 
-                # 在新线程中启动查看器
-                viewer_thread = threading.Thread(target=show_viewer, daemon=True)
-                viewer_thread.start()
+                # 使用QTimer.singleShot在主线程中执行
+                QTimer.singleShot(0, show_pdf_in_main_thread)
                 
-                print(f"✅ PDF查看器线程已启动")
+                print(f"✅ PDF查看器已安排在主线程中打开")
                 return True
                 
             except ImportError as e:
@@ -1118,9 +1129,19 @@ class APIServer(QObject):
         try:
             print("API服务器启动中，监听8800端口...")
             print("CORS已启用，允许来自任何地址的跨域请求")
-            self.app.run(host='0.0.0.0', port=8800, debug=False, threaded=True)
+            from werkzeug.serving import make_server
+            self.server = make_server('0.0.0.0', 8800, self.app, threaded=True)
+            print(f"✅ API服务器已在端口 8800 启动")
+            self.server.serve_forever()
         except Exception as e:
             print(f"API服务器启动失败: {str(e)}")
+    
+    def stop(self):
+        """停止API服务器"""
+        if hasattr(self, 'server'):
+            print("🛑 正在停止API服务器...")
+            self.server.shutdown()
+            print("✅ API服务器已停止")
 
     def extract_filename_from_content_disposition(self, content_disposition):
         """从Content-Disposition头中提取文件名"""
@@ -1158,7 +1179,7 @@ class APIServer(QObject):
 
 
 class FullscreenBrowser(QMainWindow):
-    def __init__(self):
+    def __init__(self, start_api=True):
         super().__init__()
         self.api_server = None
         self.api_thread = None
@@ -1168,7 +1189,9 @@ class FullscreenBrowser(QMainWindow):
         # 默认情况下允许关闭desktop_manager
         self.should_close_desktop_manager = True
         self.init_ui()
-        self.start_api_server()
+        # 只有在独立运行时才启动API服务器
+        if start_api:
+            self.start_api_server()
     
     def init_ui(self):
         # 创建QWebEngineView

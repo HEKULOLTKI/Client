@@ -391,8 +391,22 @@ def start_desktop_manager():
         return False
 
 
+# 全局变量控制浏览器启动状态  
+_browser_launched = False
+_browser_launch_lock = threading.Lock()
+
 def start_fullscreen_browser():
     """启动全屏浏览器程序"""
+    global _browser_launched
+    
+    # 使用锁防止重复启动
+    with _browser_launch_lock:
+        if _browser_launched:
+            print("⚠️ 浏览器已启动，避免重复启动")
+            return True
+        
+        _browser_launched = True
+    
     try:
         print("正在启动 fullscreen_browser...")
         
@@ -449,8 +463,11 @@ def start_fullscreen_browser():
                 break
         
         if not browser_path:
-            print("错误：找不到 fullscreen_browser 程序文件")
-            print("提示：请确保main.py存在或fullscreen_browser.py在正确位置")
+            print("❌ 错误：找不到 fullscreen_browser 程序文件")
+            print("💡 提示：请确保main.py存在或fullscreen_browser.py在正确位置")
+            # 重置标志以便重试
+            with _browser_launch_lock:
+                _browser_launched = False
             return False
         
         # 根据文件类型选择启动方式
@@ -490,10 +507,16 @@ def start_fullscreen_browser():
         return True
         
     except FileNotFoundError:
-        print("错误：找不到 fullscreen_browser 程序或Python解释器")
+        print("❌ 错误：找不到 fullscreen_browser 程序或Python解释器")
+        # 重置标志以便重试
+        with _browser_launch_lock:
+            _browser_launched = False
         return False
     except Exception as e:
-        print(f"启动 fullscreen_browser 时出错: {str(e)}")
+        print(f"❌ 启动 fullscreen_browser 时出错: {str(e)}")
+        # 重置标志以便重试
+        with _browser_launch_lock:
+            _browser_launched = False
         return False
 
 
@@ -522,38 +545,46 @@ def main():
             launch_program = "desktop_manager"
         elif sys.argv[3] == "--restore":
             operation_type = "restore"
+            # 对于restore操作，检查是否应该启动浏览器
+            # 如果是从desktop_manager退出调用，则启动浏览器
             launch_program = "fullscreen_browser"
         elif sys.argv[3] == "--exit-mode":
             # 退出模式，不执行任何操作
-            pass
+            operation_type = "restore"
+            launch_program = None  # 不启动任何程序
+        elif sys.argv[3] == "--launch-browser":
+            # 明确指定启动浏览器
+            launch_program = "fullscreen_browser"
     
-    print(f"增强过渡页面启动: {message}")
-    print(f"持续时间: {duration}ms")
-    print(f"图标操作: {operation_type}")
-    print(f"启动程序: {launch_program}")
+    print(f"🚀 增强过渡页面启动: {message}")
+    print(f"⏱️ 持续时间: {duration}ms")
+    print(f"🔧 图标操作: {operation_type}")
+    print(f"🔄 启动程序: {launch_program}")
     
     # 创建过渡页面
     transition_screen = EnhancedTransitionScreen(message, duration, operation_type)
     
     def on_transition_finished():
         """过渡页面完成后的回调"""
-        print("过渡页面完成")
+        print("✅ 过渡页面完成")
         
         # 根据参数启动相应程序
         if launch_program == "desktop_manager":
-            print("正在启动desktop_manager...")
+            print("🚀 正在启动desktop_manager...")
             success = start_desktop_manager()
             if success:
-                print("desktop_manager启动成功")
+                print("✅ desktop_manager启动成功")
             else:
-                print("desktop_manager启动失败")
+                print("❌ desktop_manager启动失败")
         elif launch_program == "fullscreen_browser":
-            print("正在启动fullscreen_browser...")
+            print("🚀 正在启动fullscreen_browser...")
             success = start_fullscreen_browser()
             if success:
-                print("fullscreen_browser启动成功")
+                print("✅ fullscreen_browser启动成功")
             else:
-                print("fullscreen_browser启动失败")
+                print("❌ fullscreen_browser启动失败")
+        else:
+            print("ℹ️  无需启动其他程序")
         
         # 延迟一点后关闭过渡页面和应用程序
         QTimer.singleShot(500, app.quit)
@@ -561,9 +592,9 @@ def main():
     def on_icon_operation_completed(success):
         """图标操作完成回调"""
         if success:
-            print(f"图标操作成功: {operation_type}")
+            print(f"✅ 图标操作成功: {operation_type}")
         else:
-            print(f"图标操作失败: {operation_type}")
+            print(f"❌ 图标操作失败: {operation_type}")
     
     # 连接信号
     transition_screen.finished.connect(on_transition_finished)
