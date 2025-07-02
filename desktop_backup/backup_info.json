@@ -1,167 +1,50 @@
 {
-  "backup_time": 1751298836.7352924,
+  "backup_time": 1751419258.953233,
   "desktop_path": "C:\\Users\\33089\\Desktop",
   "files": [
     {
-      "original_path": "C:\\Users\\33089\\Desktop\\Cursor.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\Cursor_65.lnk",
-      "name": "Cursor.lnk",
-      "extension": ".lnk",
-      "size": 648,
-      "modified_time": 1745725848.764866,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\FSCapture_Ver.9.4_Chs_Final.exe",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\FSCapture_Ver.9.4_Chs_Final_65.exe",
-      "name": "FSCapture_Ver.9.4_Chs_Final.exe",
-      "extension": ".exe",
-      "size": 3628119,
-      "modified_time": 1599651020.0,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\GitHub Desktop.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\GitHub Desktop_65.lnk",
-      "name": "GitHub Desktop.lnk",
-      "extension": ".lnk",
-      "size": 2371,
-      "modified_time": 1749800519.3324833,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\HBuilder X.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\HBuilder X_65.lnk",
-      "name": "HBuilder X.lnk",
-      "extension": ".lnk",
-      "size": 859,
-      "modified_time": 1747209972.6736891,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\Microsoft Edge.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\Microsoft Edge_65.lnk",
-      "name": "Microsoft Edge.lnk",
-      "extension": ".lnk",
-      "size": 2336,
-      "modified_time": 1749087758.0490093,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\MobaXterm_Personal_23.0 - 快捷方式.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\MobaXterm_Personal_23.0 - 快捷方式_65.lnk",
-      "name": "MobaXterm_Personal_23.0 - 快捷方式.lnk",
-      "extension": ".lnk",
-      "size": 1010,
-      "modified_time": 1745727944.5756319,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\SecureCRT_Portable",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\SecureCRT_Portable_65",
-      "name": "SecureCRT_Portable",
-      "extension": "",
-      "size": 55934055,
-      "modified_time": 1750681839.3799942,
-      "type": "folder"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\Trae CN.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\Trae CN_65.lnk",
-      "name": "Trae CN.lnk",
-      "extension": ".lnk",
-      "size": 656,
-      "modified_time": 1750822109.609013,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\Visual Studio Code.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\Visual Studio Code_65.lnk",
-      "name": "Visual Studio Code.lnk",
-      "extension": ".lnk",
-      "size": 725,
-      "modified_time": 1745727140.8299809,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\Wallpaper Engine：壁纸引擎.url",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\Wallpaper Engine：壁纸引擎_65.url",
-      "name": "Wallpaper Engine：壁纸引擎.url",
-      "extension": ".url",
-      "size": 202,
-      "modified_time": 1749976309.7780292,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\WPS PDF独立版.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\WPS PDF独立版_65.lnk",
-      "name": "WPS PDF独立版.lnk",
-      "extension": ".lnk",
-      "size": 1139,
-      "modified_time": 1747999712.2965915,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\副本任务导入模板 (1).xlsx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\副本任务导入模板 (1)_55.xlsx",
-      "name": "副本任务导入模板 (1).xlsx",
-      "extension": ".xlsx",
-      "size": 14699,
-      "modified_time": 1751102184.4440794,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\小锐云桥.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\小锐云桥_65.lnk",
-      "name": "小锐云桥.lnk",
-      "extension": ".lnk",
-      "size": 777,
-      "modified_time": 1747876840.444194,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\暗区突围：无限.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\暗区突围：无限_65.lnk",
-      "name": "暗区突围：无限.lnk",
-      "extension": ".lnk",
-      "size": 1208,
-      "modified_time": 1746098175.5916898,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\百度网盘.lnk",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\百度网盘_65.lnk",
-      "name": "百度网盘.lnk",
-      "extension": ".lnk",
-      "size": 613,
-      "modified_time": 1750832080.0097203,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\网络工程师稿子.docx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\网络工程师稿子_65.docx",
-      "name": "网络工程师稿子.docx",
+      "original_path": "C:\\Users\\33089\\Desktop\\孪生修改.docx",
+      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\孪生修改_2.docx",
+      "name": "孪生修改.docx",
       "extension": ".docx",
-      "size": 18551,
-      "modified_time": 1750563739.2570775,
+      "size": 3866446,
+      "modified_time": 1751396166.6473444,
       "type": "file"
     },
     {
-      "original_path": "C:\\Users\\33089\\Desktop\\运维技能稿子.docx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\运维技能稿子_65.docx",
-      "name": "运维技能稿子.docx",
-      "extension": ".docx",
-      "size": 18281,
-      "modified_time": 1750857577.9390826,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\项目任务汇报单子(系统规划与管理师).pdf",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\项目任务汇报单子(系统规划与管理师)_46.pdf",
-      "name": "项目任务汇报单子(系统规划与管理师).pdf",
+      "original_path": "C:\\Users\\33089\\Desktop\\孪生修改.pdf",
+      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\孪生修改_2.pdf",
+      "name": "孪生修改.pdf",
       "extension": ".pdf",
-      "size": 106287,
-      "modified_time": 1750255222.0029323,
+      "size": 1379137,
+      "modified_time": 1751396353.6678379,
+      "type": "file"
+    },
+    {
+      "original_path": "C:\\Users\\33089\\Desktop\\孪生修改.pdf.docx",
+      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\孪生修改.pdf_2.docx",
+      "name": "孪生修改.pdf.docx",
+      "extension": ".docx",
+      "size": 3866446,
+      "modified_time": 1751396188.3805642,
+      "type": "file"
+    },
+    {
+      "original_path": "C:\\Users\\33089\\Desktop\\微信图片_2025-07-02_001315_369.png",
+      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\微信图片_2025-07-02_001315_369_2.png",
+      "name": "微信图片_2025-07-02_001315_369.png",
+      "extension": ".png",
+      "size": 826274,
+      "modified_time": 1751386399.6748357,
+      "type": "file"
+    },
+    {
+      "original_path": "C:\\Users\\33089\\Desktop\\系统规划与管理师.docx",
+      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\系统规划与管理师_2.docx",
+      "name": "系统规划与管理师.docx",
+      "extension": ".docx",
+      "size": 20767,
+      "modified_time": 1751396653.0624557,
       "type": "file"
     }
   ]

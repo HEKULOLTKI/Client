@@ -256,6 +256,8 @@ class IntegratedApplication(QMainWindow):
     
     def start_desktop_manager(self):
         """启动桌面管理器"""
+        print("🚀 正在启动桌面管理器...")
+        
         if not self.modules['desktop']:
             self.modules['desktop'] = DesktopManager()
             # 传递共享数据
@@ -264,9 +266,19 @@ class IntegratedApplication(QMainWindow):
                 self.modules['desktop'].user_session_info = self.shared_data['user_info']
                 self.modules['desktop'].update_role_display()
                 self.modules['desktop'].update_task_display()
+                print("✅ 已传递共享数据到桌面管理器")
         
-        self.modules['desktop'].show()
-        self.modules['desktop'].raise_()
+        # 确保桌面管理器正确显示
+        desktop = self.modules['desktop']
+        desktop.show()
+        desktop.raise_()
+        desktop.activateWindow()
+        
+        # 确保窗口不是最小化状态
+        if desktop.isMinimized():
+            desktop.showNormal()
+        
+        print("✅ 桌面管理器已启动并激活")
     
     def start_pet(self):
         """启动桌面宠物"""
@@ -309,13 +321,57 @@ class IntegratedApplication(QMainWindow):
         if self.api_server:
             self.shared_data['tasks'] = self.api_server.received_tasks
             self.shared_data['user_info'] = self.api_server.user_session_info
+            print(f"📊 已提取数据: tasks={len(self.shared_data['tasks'])} 项, user_info={bool(self.shared_data['user_info'])}")
         
         # 显示过渡动画
+        print("🎬 正在创建过渡页面...")
         transition = TransitionScreen("正在加载桌面管理器...", 2000)
-        transition.show()
         
-        # 延迟切换到桌面管理器
-        QTimer.singleShot(500, lambda: self.switch_module('desktop'))
+        # 连接过渡页面完成信号，确保在过渡页面关闭后再显示desktop_manager
+        def on_transition_finished():
+            print("🎬 过渡页面完成信号已接收，正在启动桌面管理器...")
+            try:
+                self.switch_module('desktop')
+                
+                # 确保desktop_manager正确显示在前台
+                if self.modules['desktop']:
+                    print("🔧 正在确保桌面管理器可见...")
+                    QTimer.singleShot(100, lambda: self._ensure_desktop_manager_visible())
+                else:
+                    print("❌ 错误：桌面管理器模块为空")
+            except Exception as e:
+                print(f"❌ 启动桌面管理器时出错: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        print("🔗 连接过渡页面完成信号...")
+        transition.finished.connect(on_transition_finished)
+        
+        print("🎬 显示过渡页面...")
+        transition.show()
+        print("✅ 过渡页面已显示")
+    
+    def _ensure_desktop_manager_visible(self):
+        """确保桌面管理器可见并在前台"""
+        print("🔧 执行桌面管理器可见性确保...")
+        if self.modules['desktop']:
+            desktop = self.modules['desktop']
+            
+            print(f"📋 桌面管理器状态: visible={desktop.isVisible()}, minimized={desktop.isMinimized()}")
+            
+            desktop.show()
+            desktop.raise_()
+            desktop.activateWindow()
+            desktop.setWindowState(desktop.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+            
+            # 强制重绘
+            desktop.repaint()
+            desktop.update()
+            
+            print("✅ 桌面管理器已激活并置于前台")
+            print(f"📋 更新后状态: visible={desktop.isVisible()}, minimized={desktop.isMinimized()}")
+        else:
+            print("❌ 错误：桌面管理器模块不存在")
     
     @pyqtSlot(str)
     def on_digital_twin_requested(self, url):

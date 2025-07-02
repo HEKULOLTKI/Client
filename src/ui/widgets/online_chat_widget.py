@@ -380,13 +380,13 @@ class ImageChatBubble(QFrame):
         container_layout.addWidget(self.loading_label)
         container_layout.addWidget(self.image_label)
         
-        # 设置图片点击事件
-        self.image_label.mousePressEvent = self.on_image_clicked
-        self.image_label.setCursor(QCursor(Qt.PointingHandCursor))
-        self.image_label.setToolTip("点击查看大图")
+        # 移除图片点击事件和操作按钮
+        # self.image_label.mousePressEvent = self.on_image_clicked
+        # self.image_label.setCursor(QCursor(Qt.PointingHandCursor))
+        # self.image_label.setToolTip("点击查看大图")
         
-        # 添加操作按钮（浮动在图片上方）
-        self.setup_image_controls()
+        # 移除操作按钮（预览和下载功能已禁用）
+        # self.setup_image_controls()
         
         # 创建头像
         avatar = QLabel()
@@ -491,9 +491,9 @@ class ImageChatBubble(QFrame):
         self.image_label.setFixedSize(scaled_size)
         self.image_label.show()
         
-        # 添加点击事件查看大图
-        self.image_label.mousePressEvent = lambda event: self.show_full_image(pixmap)
-        self.image_label.setCursor(QCursor(Qt.PointingHandCursor))
+        # 移除点击事件（预览功能已禁用）
+        # self.image_label.mousePressEvent = lambda event: self.show_full_image(pixmap)
+        # self.image_label.setCursor(QCursor(Qt.PointingHandCursor))
         
         print(f"✅ 图片加载成功: {self.file_name}")
     
@@ -693,12 +693,13 @@ class ImageDownloadThread(QThread):
             self.load_failed.emit(str(e))
 
 class ImageViewDialog(QDialog):
-    """增强版图片查看对话框 - 支持缩放、拖拽和全屏"""
+    """现代化图片查看器 - 移动应用风格设计"""
     def __init__(self, pixmap, filename, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"图片查看器 - {filename}")
-        self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint | Qt.WindowMaximizeButtonHint)
+        self.setWindowTitle("图片查看器")
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setModal(True)
+        self.setAttribute(Qt.WA_TranslucentBackground)
         
         # 图片相关属性
         self.original_pixmap = pixmap
@@ -709,39 +710,46 @@ class ImageViewDialog(QDialog):
         self.is_dragging = False
         self.drag_start_pos = QPoint()
         self.last_mouse_pos = QPoint()
-        self.drag_sensitivity = 1.0  # 拖动灵敏度
+        self.drag_sensitivity = 1.0
+        self.toolbar_visible = True
         
-        # 计算初始窗口大小
+        # 计算全屏显示
         screen = QApplication.primaryScreen().geometry()
-        initial_width = min(pixmap.width() + 100, int(screen.width() * 0.9))
-        initial_height = min(pixmap.height() + 150, int(screen.height() * 0.9))
-        self.resize(initial_width, initial_height)
-        
-        # 居中显示
-        self.move(
-            (screen.width() - initial_width) // 2,
-            (screen.height() - initial_height) // 2
-        )
+        self.setGeometry(screen)
         
         self.setup_ui()
         self.update_image()
         
-    def setup_ui(self):
-        """设置用户界面"""
-        # 主布局
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        # 设置3秒后自动隐藏工具栏的定时器
+        self.hide_toolbar_timer = QTimer()
+        self.hide_toolbar_timer.setSingleShot(True)
+        self.hide_toolbar_timer.timeout.connect(self.auto_hide_toolbar)
+        self.reset_hide_timer()
         
-        # 滚动区域
+    def setup_ui(self):
+        """设置现代化用户界面"""
+        # 设置深色背景
+        self.setStyleSheet("""
+            QDialog {
+                background: rgba(0, 0, 0, 0.95);
+            }
+        """)
+        
+        # 主布局 - 无边距全屏
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # 滚动区域 - 透明背景
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setAlignment(Qt.AlignCenter)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setStyleSheet("""
             QScrollArea {
-                border: 2px solid #dee2e6;
-                border-radius: 8px;
-                background-color: #f8f9fa;
+                border: none;
+                background: transparent;
             }
         """)
         
@@ -750,43 +758,197 @@ class ImageViewDialog(QDialog):
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setStyleSheet("""
             QLabel {
-                background-color: white;
+                background: transparent;
                 border: none;
             }
         """)
         self.image_label.setMinimumSize(200, 200)
         
-        # 设置拖拽
+        # 设置拖拽和鼠标事件
         self.image_label.setMouseTracking(True)
-        self.image_label.setCursor(QCursor(Qt.OpenHandCursor))  # 显示可拖拽光标
+        self.image_label.setCursor(QCursor(Qt.OpenHandCursor))
         self.image_label.mousePressEvent = self.mouse_press_event
         self.image_label.mouseMoveEvent = self.mouse_move_event
         self.image_label.mouseReleaseEvent = self.mouse_release_event
         self.image_label.mouseDoubleClickEvent = self.mouse_double_click_event
         
-        # 启用图片标签的拖拽功能
-        self.image_label.setAcceptDrops(False)  # 不接受外部拖放
-        self.scroll_area.setMouseTracking(True)  # 滚动区域也启用鼠标跟踪
-        
         self.scroll_area.setWidget(self.image_label)
+        main_layout.addWidget(self.scroll_area)
         
-        # 信息栏
-        info_layout = QHBoxLayout()
-        self.info_label = QLabel()
-        self.update_info_label()
-        self.info_label.setStyleSheet("""
-            QLabel {
-                color: #6c757d;
-                font-size: 12px;
-                padding: 5px;
+        # 创建浮动工具栏
+        self.create_floating_toolbar()
+        
+        # 创建浮动信息栏
+        self.create_floating_info_bar()
+        
+        # 设置鼠标追踪以重置隐藏定时器
+        self.setMouseTracking(True)
+        self.scroll_area.setMouseTracking(True)
+    
+    def create_floating_toolbar(self):
+        """创建浮动工具栏"""
+        self.toolbar = QWidget(self)
+        self.toolbar.setFixedHeight(60)
+        self.toolbar.setStyleSheet("""
+            QWidget {
+                background: rgba(40, 40, 40, 0.9);
+                border-radius: 30px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
             }
         """)
-        info_layout.addWidget(self.info_label)
-        info_layout.addStretch()
         
-        # 添加到主布局
-        main_layout.addWidget(self.scroll_area)
-        main_layout.addLayout(info_layout)
+        toolbar_layout = QHBoxLayout(self.toolbar)
+        toolbar_layout.setContentsMargins(20, 10, 20, 10)
+        toolbar_layout.setSpacing(15)
+        
+        # 关闭按钮
+        close_btn = self.create_modern_button("✕", "#ff4757", "关闭")
+        close_btn.clicked.connect(self.close)
+        
+        # 缩小按钮
+        zoom_out_btn = self.create_modern_button("−", "#5f27cd", "缩小")
+        zoom_out_btn.clicked.connect(self.zoom_out)
+        
+        # 放大按钮
+        zoom_in_btn = self.create_modern_button("+", "#00d2d3", "放大")
+        zoom_in_btn.clicked.connect(self.zoom_in)
+        
+        # 重置按钮
+        reset_btn = self.create_modern_button("⌂", "#2ed573", "重置")
+        reset_btn.clicked.connect(self.reset_zoom)
+        
+        # 适应按钮
+        fit_btn = self.create_modern_button("⊞", "#ffa502", "适应窗口")
+        fit_btn.clicked.connect(self.fit_to_window)
+        
+        # 保存按钮
+        save_btn = self.create_modern_button("💾", "#747d8c", "保存")
+        save_btn.clicked.connect(self.save_image)
+        
+        toolbar_layout.addWidget(close_btn)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(zoom_out_btn)
+        toolbar_layout.addWidget(zoom_in_btn)
+        toolbar_layout.addWidget(reset_btn)
+        toolbar_layout.addWidget(fit_btn)
+        toolbar_layout.addWidget(save_btn)
+        
+        # 设置工具栏位置（顶部居中）
+        self.position_toolbar()
+    
+    def create_modern_button(self, text, color, tooltip):
+        """创建现代化圆形按钮"""
+        btn = QPushButton(text)
+        btn.setFixedSize(40, 40)
+        btn.setFont(QFont("Microsoft YaHei UI", 12, QFont.Bold))
+        btn.setToolTip(tooltip)
+        btn.setCursor(QCursor(Qt.PointingHandCursor))
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {color};
+                color: white;
+                border: none;
+                border-radius: 20px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background: rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.8);
+                transform: scale(1.1);
+            }}
+            QPushButton:pressed {{
+                transform: scale(0.95);
+            }}
+        """)
+        return btn
+    
+    def create_floating_info_bar(self):
+        """创建浮动信息栏"""
+        self.info_bar = QWidget(self)
+        self.info_bar.setFixedHeight(40)
+        self.info_bar.setStyleSheet("""
+            QWidget {
+                background: rgba(40, 40, 40, 0.9);
+                border-radius: 20px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+        """)
+        
+        info_layout = QHBoxLayout(self.info_bar)
+        info_layout.setContentsMargins(15, 8, 15, 8)
+        
+        self.info_label = QLabel()
+        self.info_label.setFont(QFont("Microsoft YaHei UI", 10))
+        self.info_label.setStyleSheet("""
+            QLabel {
+                color: white;
+                background: transparent;
+            }
+        """)
+        self.update_info_label()
+        
+        info_layout.addWidget(self.info_label)
+        
+        # 设置信息栏位置（底部居中）
+        self.position_info_bar()
+    
+    def position_toolbar(self):
+        """定位工具栏"""
+        toolbar_width = 350
+        self.toolbar.setFixedWidth(toolbar_width)
+        x = (self.width() - toolbar_width) // 2
+        y = 20
+        self.toolbar.move(x, y)
+    
+    def position_info_bar(self):
+        """定位信息栏"""
+        info_width = min(600, self.width() - 40)
+        self.info_bar.setFixedWidth(info_width)
+        x = (self.width() - info_width) // 2
+        y = self.height() - 60
+        self.info_bar.move(x, y)
+    
+    def auto_hide_toolbar(self):
+        """自动隐藏工具栏"""
+        if self.toolbar_visible:
+            self.toggle_toolbar_visibility(False)
+    
+    def toggle_toolbar_visibility(self, visible=None):
+        """切换工具栏可见性"""
+        if visible is None:
+            visible = not self.toolbar_visible
+        
+        self.toolbar_visible = visible
+        
+        # 使用动画效果
+        self.toolbar_animation = QPropertyAnimation(self.toolbar, b"pos")
+        self.info_animation = QPropertyAnimation(self.info_bar, b"pos")
+        
+        if visible:
+            # 显示工具栏
+            self.toolbar_animation.setStartValue(QPoint(self.toolbar.x(), -60))
+            self.toolbar_animation.setEndValue(QPoint(self.toolbar.x(), 20))
+            self.info_animation.setStartValue(QPoint(self.info_bar.x(), self.height()))
+            self.info_animation.setEndValue(QPoint(self.info_bar.x(), self.height() - 60))
+        else:
+            # 隐藏工具栏
+            self.toolbar_animation.setStartValue(QPoint(self.toolbar.x(), 20))
+            self.toolbar_animation.setEndValue(QPoint(self.toolbar.x(), -60))
+            self.info_animation.setStartValue(QPoint(self.info_bar.x(), self.height() - 60))
+            self.info_animation.setEndValue(QPoint(self.info_bar.x(), self.height()))
+        
+        self.toolbar_animation.setDuration(300)
+        self.info_animation.setDuration(300)
+        self.toolbar_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self.info_animation.setEasingCurve(QEasingCurve.OutCubic)
+        
+        self.toolbar_animation.start()
+        self.info_animation.start()
+    
+    def reset_hide_timer(self):
+        """重置隐藏定时器"""
+        if not self.toolbar_visible:
+            self.toggle_toolbar_visibility(True)
+        self.hide_toolbar_timer.start(3000)  # 3秒后隐藏
         
     def update_image(self):
         """更新图片显示"""
@@ -810,15 +972,12 @@ class ImageViewDialog(QDialog):
         self.update_info_label()
         
     def update_info_label(self):
-        """更新信息标签"""
+        """更新信息标签 - 简化显示"""
         original_size = self.original_pixmap.size()
-        current_size = self.original_pixmap.size() * self.scale_factor
         
-        info_text = (f"📁 {self.filename} | "
-                    f"📐 原始: {original_size.width()}×{original_size.height()} | "
-                    f"📏 当前: {int(current_size.width())}×{int(current_size.height())} | "
-                    f"🔍 {int(self.scale_factor * 100)}% | "
-                    f"💡 双击重置位置，Ctrl+滚轮缩放，方向键移动")
+        info_text = (f"{self.filename} • "
+                    f"{original_size.width()}×{original_size.height()} • "
+                    f"{int(self.scale_factor * 100)}%")
         
         self.info_label.setText(info_text)
         
@@ -1012,24 +1171,7 @@ class ImageViewDialog(QDialog):
             # 普通滚动
             super().wheelEvent(event)
             
-    def keyPressEvent(self, event):
-        """键盘事件 - 支持方向键拖动"""
-        if event.modifiers() == Qt.ControlModifier:
-            if event.key() == Qt.Key_Plus or event.key() == Qt.Key_Equal:
-                self.zoom_in()
-            elif event.key() == Qt.Key_Minus:
-                self.zoom_out()
-            elif event.key() == Qt.Key_0:
-                self.reset_zoom()
-            elif event.key() == Qt.Key_F:
-                self.fit_to_window()
-        elif event.key() == Qt.Key_Escape:
-            self.close()
-        elif event.key() in [Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down]:
-            # 方向键移动图片
-            self.move_image_with_keys(event.key())
-        else:
-            super().keyPressEvent(event)
+
             
     def move_image_with_keys(self, key):
         """使用方向键移动图片"""
@@ -1052,7 +1194,43 @@ class ImageViewDialog(QDialog):
     def resizeEvent(self, event):
         """窗口大小改变事件"""
         super().resizeEvent(event)
-        # 可以在这里添加自动适应窗口的逻辑
+        # 重新定位浮动工具栏和信息栏
+        if hasattr(self, 'toolbar'):
+            self.position_toolbar()
+        if hasattr(self, 'info_bar'):
+            self.position_info_bar()
+    
+    def mouseMoveEvent(self, event):
+        """鼠标移动事件 - 重置隐藏定时器"""
+        super().mouseMoveEvent(event)
+        self.reset_hide_timer()
+        
+    def keyPressEvent(self, event):
+        """键盘事件 - 增强版快捷键"""
+        if event.key() == Qt.Key_Escape:
+            self.close()
+        elif event.key() == Qt.Key_Space:
+            # 空格键切换工具栏显示/隐藏
+            self.toggle_toolbar_visibility()
+        elif event.modifiers() == Qt.ControlModifier:
+            if event.key() == Qt.Key_Plus or event.key() == Qt.Key_Equal:
+                self.zoom_in()
+            elif event.key() == Qt.Key_Minus:
+                self.zoom_out()
+            elif event.key() == Qt.Key_0:
+                self.reset_zoom()
+            elif event.key() == Qt.Key_F:
+                self.fit_to_window()
+            elif event.key() == Qt.Key_S:
+                self.save_image()
+        elif event.key() in [Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down]:
+            # 方向键移动图片
+            self.move_image_with_keys(event.key())
+        else:
+            super().keyPressEvent(event)
+        
+        # 任何键盘操作都重置隐藏定时器
+        self.reset_hide_timer()
 
 class FileChatBubble(QFrame):
     """文件消息气泡组件 - 支持点击下载"""

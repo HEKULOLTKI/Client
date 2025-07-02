@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout,
                              QDialogButtonBox, QLineEdit, QComboBox, QFormLayout,
                              QTextEdit, QFileDialog, QTabWidget, QTableWidget,
                              QTableWidgetItem, QHeaderView, QProgressBar, QGraphicsDropShadowEffect)
-from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher, QThread, pyqtSlot
+from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher, QThread, pyqtSlot, QSize
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 from src.core import config
 from src.ui.widgets.pet_widget import PetWidget
@@ -4024,16 +4024,16 @@ class DesktopManager(QWidget):
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(8)
         
-        # 按钮配置
+        # 按钮配置 - 使用SVG图标，与悬浮窗背景颜色一致
+        uniform_color = "#2d3436"  # 与悬浮窗背景色一致的深灰色
         buttons_config = [
-            ("🗺️", "拓扑图", self.show_tuopo, "#3498db"),
-            ("🐱", "宠物", self.show_pet, "#e74c3c"),
-            ("💬", "在线聊天", self.show_online_chat, "#2ecc71"),
-            ("⚙️", "设置", self.show_settings_action, "#f39c12"),
-            ("📤", "智能任务列表", self.submit_tasks, "#9b59b6"),
-            ("📊", "进度报告导出", self.show_progress_report, "#17a2b8"),
-            ("🖥️", "添加设备", self.add_device, "#34495e"),
-            ("❌", "退出", self.exit_application, "#95a5a6")
+            ("构设.svg", "拓扑图", self.show_tuopo, uniform_color),
+            ("宠物.svg", "宠物", self.show_pet, uniform_color),
+            ("聊天.svg", "在线聊天", self.show_online_chat, uniform_color),
+            ("工具.svg", "设置", self.show_settings_action, uniform_color),
+            ("任务.svg", "智能任务列表", self.submit_tasks, uniform_color),
+            ("设备添加.svg", "添加设备", self.add_device, uniform_color),
+            ("❌", "退出", self.exit_application, uniform_color)
         ]
         
         for icon, tooltip, handler, color in buttons_config:
@@ -4042,13 +4042,42 @@ class DesktopManager(QWidget):
         
         layout.addLayout(buttons_layout)
         
-    def create_button(self, text, tooltip, handler, color):
-        """创建功能按钮"""
-        button = QPushButton(text)
+    def create_button(self, icon, tooltip, handler, color):
+        """创建功能按钮 - 支持SVG图标"""
+        button = QPushButton()
         button.setToolTip(tooltip)
         button.setFixedSize(40, 40)
-        button.setFont(QFont("Segoe UI Emoji", 12))
         button.clicked.connect(handler)
+        
+        try:
+            # 检查是否为SVG图标
+            if icon.endswith('.svg'):
+                # 使用SVG图标
+                icon_path = os.path.join(os.path.dirname(__file__), 
+                                       f'../../resources/assets/desktop_icon/{icon}')
+                icon_path = os.path.normpath(icon_path)  # 规范化路径
+                
+                if os.path.exists(icon_path):
+                    print(f"✅ 加载SVG图标: {icon_path}")
+                    button.setIcon(QIcon(icon_path))
+                    button.setIconSize(QSize(24, 24))
+                else:
+                    # 如果SVG文件不存在，回退到文字
+                    print(f"⚠️ SVG文件不存在，回退到文字显示: {icon_path}")
+                    fallback_text = tooltip[:2] if len(tooltip) >= 2 else "?"
+                    button.setText(fallback_text)
+                    button.setFont(QFont("Microsoft YaHei", 10))
+            else:
+                # 使用原有的emoji文字
+                button.setText(icon)
+                button.setFont(QFont("Segoe UI Emoji", 12))
+                
+        except Exception as e:
+            print(f"❌ 创建按钮 '{tooltip}' 时出错: {e}")
+            # 出错时使用文字回退
+            fallback_text = tooltip[:2] if len(tooltip) >= 2 else "?"
+            button.setText(fallback_text)
+            button.setFont(QFont("Microsoft YaHei", 10))
         
         button.setStyleSheet(f"""
             QPushButton {{
