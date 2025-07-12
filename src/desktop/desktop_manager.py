@@ -3420,7 +3420,7 @@ class DesktopManager(QWidget):
     """桌面管理器 - 在桌面顶部悬浮显示"""
     
     # 定义信号
-    show_settings = pyqtSignal()
+    show_toolbox = pyqtSignal()  # 原名: show_settings
     
     def __init__(self):
         super().__init__()
@@ -4030,7 +4030,7 @@ class DesktopManager(QWidget):
             ("构设.svg", "拓扑图", self.show_tuopo, uniform_color),
             ("宠物.svg", "宠物", self.show_pet, uniform_color),
             ("聊天.svg", "在线聊天", self.show_online_chat, uniform_color),
-            ("工具.svg", "设置", self.show_settings_action, uniform_color),
+            ("工具.svg", "工具箱", self.show_toolbox_action, uniform_color),
             ("任务.svg", "智能任务列表", self.submit_tasks, uniform_color),
             ("设备添加.svg", "添加设备", self.add_device, uniform_color),
             ("❌", "退出", self.exit_application, uniform_color)
@@ -4747,10 +4747,10 @@ class DesktopManager(QWidget):
             import traceback
             traceback.print_exc()
             
-    def show_settings_action(self):
-        """显示设置"""
-        print("设置功能开发中...")
-        # TODO: 实现设置界面
+    def show_toolbox_action(self):
+        """显示工具箱"""
+        print("工具箱功能开发中...")
+        # TODO: 实现工具箱界面
     
     def show_progress_report(self):
         """显示进度报告管理对话框"""
