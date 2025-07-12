@@ -1,0 +1,142 @@
+[
+  {
+    "name": "命令提示符",
+    "path": "cmd.exe",
+    "icon": "💻",
+    "description": "Windows命令行工具",
+    "category": "系统工具"
+  },
+  {
+    "name": "PowerShell",
+    "path": "powershell.exe",
+    "icon": "⚡",
+    "description": "PowerShell命令行",
+    "category": "系统工具"
+  },
+  {
+    "name": "控制面板",
+    "path": "control.exe",
+    "icon": "⚙️",
+    "description": "Windows控制面板",
+    "category": "系统设置"
+  },
+  {
+    "name": "任务管理器",
+    "path": "taskmgr.exe",
+    "icon": "📊",
+    "description": "系统任务管理器",
+    "category": "系统工具"
+  },
+  {
+    "name": "设备管理器",
+    "path": "devmgmt.msc",
+    "icon": "🔧",
+    "description": "硬件设备管理",
+    "category": "系统工具"
+  },
+  {
+    "name": "服务管理",
+    "path": "services.msc",
+    "icon": "🔄",
+    "description": "Windows服务管理",
+    "category": "系统工具"
+  },
+  {
+    "name": "注册表编辑器",
+    "path": "regedit.exe",
+    "icon": "🔐",
+    "description": "系统注册表编辑",
+    "category": "高级工具"
+  },
+  {
+    "name": "组策略编辑器",
+    "path": "gpedit.msc",
+    "icon": "📋",
+    "description": "组策略管理",
+    "category": "高级工具"
+  },
+  {
+    "name": "磁盘管理",
+    "path": "diskmgmt.msc",
+    "icon": "💾",
+    "description": "磁盘分区管理",
+    "category": "系统工具"
+  },
+  {
+    "name": "事件查看器",
+    "path": "eventvwr.msc",
+    "icon": "📝",
+    "description": "系统日志查看",
+    "category": "系统工具"
+  },
+  {
+    "name": "计算机管理",
+    "path": "compmgmt.msc",
+    "icon": "🖥️",
+    "description": "计算机综合管理",
+    "category": "系统工具"
+  },
+  {
+    "name": "系统信息",
+    "path": "msinfo32.exe",
+    "icon": "ℹ️",
+    "description": "系统详细信息",
+    "category": "系统工具"
+  },
+  {
+    "name": "DirectX诊断",
+    "path": "dxdiag.exe",
+    "icon": "🎮",
+    "description": "DirectX诊断工具",
+    "category": "系统工具"
+  },
+  {
+    "name": "系统配置",
+    "path": "msconfig.exe",
+    "icon": "🔧",
+    "description": "系统启动配置",
+    "category": "系统工具"
+  },
+  {
+    "name": "性能监视器",
+    "path": "perfmon.exe",
+    "icon": "📈",
+    "description": "系统性能监控",
+    "category": "系统工具"
+  },
+  {
+    "name": "资源监视器",
+    "path": "resmon.exe",
+    "icon": "📊",
+    "description": "系统资源监控",
+    "category": "系统工具"
+  },
+  {
+    "name": "计算器",
+    "path": "calc.exe",
+    "icon": "🧮",
+    "description": "Windows计算器",
+    "category": "实用工具"
+  },
+  {
+    "name": "记事本",
+    "path": "notepad.exe",
+    "icon": "📝",
+    "description": "文本编辑器",
+    "category": "实用工具"
+  },
+  {
+    "name": "画图",
+    "path": "mspaint.exe",
+    "icon": "🎨",
+    "description": "图像编辑器",
+    "category": "实用工具"
+  },
+  {
+    "name": "截图工具",
+    "path": "snippingtool.exe",
+    "icon": "📸",
+    "description": "屏幕截图工具",
+    "category": "实用工具"
+  }
+]

@@ -12,7 +12,8 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout,
                              QMessageBox, QDialog, QCheckBox, QScrollArea, 
                              QDialogButtonBox, QLineEdit, QComboBox, QFormLayout,
                              QTextEdit, QFileDialog, QTabWidget, QTableWidget,
-                             QTableWidgetItem, QHeaderView, QProgressBar, QGraphicsDropShadowEffect)
+                             QTableWidgetItem, QHeaderView, QProgressBar, QGraphicsDropShadowEffect,
+                             QGridLayout, QListWidget, QSpinBox)
 from PyQt5.QtCore import Qt, QTimer, QTime, pyqtSignal, QPoint, QPropertyAnimation, QEasingCurve, QFileSystemWatcher, QThread, pyqtSlot, QSize
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QLinearGradient
 from src.core import config
@@ -3416,6 +3417,1507 @@ class BatchDeviceAddWorker(QThread):
             return False
 
 
+class ToolboxDialog(QDialog):
+    """工具箱对话框 - 提供各种实用工具"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.desktop_manager = parent
+        self.search_text = ""  # 搜索文本
+        self.animation_group = None  # 动画组
+        self.current_theme = "gradient"  # 当前主题
+        self.tool_usage_stats = {}  # 工具使用统计
+        self.cache = {}  # 缓存机制
+        self.lazy_load_timer = None  # 延迟加载定时器
+        self.setup_ui()
+        self.setup_animations()
+        self.setup_shortcuts()
+        self.load_usage_stats()
+        self.setup_lazy_loading()
+        
+    def setup_ui(self):
+        """设置界面"""
+        self.setWindowTitle("智能工具箱")
+        self.setFixedSize(1200, 800)  # 增加窗口大小
+        self.setModal(True)
+        
+        # 隐藏标题栏控制按钮（最小化、最大化、关闭按钮）
+        self.setWindowFlags(Qt.Dialog | Qt.CustomizeWindowHint | Qt.WindowTitleHint)
+        
+        # 设置朴素背景样式
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f5f5f5;
+                border: 1px solid #d0d0d0;
+            }
+        """)
+        
+        # 主布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # 创建标题区域
+        self.create_header_section(layout)
+        
+        # 创建搜索区域
+        self.create_search_section(layout)
+        
+        # 创建工具网格
+        self.create_tool_grid(layout)
+        
+        # 底部按钮区域
+        self.create_bottom_buttons(layout)
+        
+    def create_header_section(self, layout):
+        """创建标题区域"""
+        header_frame = QFrame()
+        header_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 5px;
+            }
+        """)
+        
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(20, 15, 20, 15)
+        
+        # 工具箱图标
+        icon_label = QLabel("🔧")
+        icon_label.setStyleSheet("""
+            QLabel {
+                font-size: 32px;
+                color: #333333;
+                padding: 5px;
+            }
+        """)
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setFixedSize(50, 50)
+        
+        # 标题和描述
+        title_container = QWidget()
+        title_layout = QVBoxLayout(title_container)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(3)
+        
+        title_label = QLabel("智能工具箱")
+        title_label.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                font-weight: bold;
+                color: #333333;
+                font-family: '微软雅黑';
+            }
+        """)
+        
+        subtitle_label = QLabel("高效工具集合，提升您的工作效率")
+        subtitle_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: #666666;
+                font-family: '微软雅黑';
+                font-weight: normal;
+            }
+        """)
+        
+        # 使用统计标签
+        self.usage_label = QLabel(self.get_usage_info())
+        self.usage_label.setStyleSheet("""
+            QLabel {
+                font-size: 12px;
+                color: #999999;
+                font-family: '微软雅黑';
+                font-weight: normal;
+            }
+        """)
+        
+        title_layout.addWidget(title_label)
+        title_layout.addWidget(subtitle_label)
+        title_layout.addWidget(self.usage_label)
+        
+        header_layout.addWidget(icon_label)
+        header_layout.addSpacing(15)
+        header_layout.addWidget(title_container)
+        header_layout.addStretch()
+        
+        layout.addWidget(header_frame)
+        
+    def create_search_section(self, layout):
+        """创建搜索区域"""
+        search_frame = QFrame()
+        search_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 5px;
+            }
+        """)
+        
+        search_layout = QHBoxLayout(search_frame)
+        search_layout.setContentsMargins(15, 10, 15, 10)
+        
+        # 搜索图标
+        search_icon = QLabel("🔍")
+        search_icon.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                color: #666666;
+                padding: 5px;
+            }
+        """)
+        
+        # 搜索输入框
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("搜索工具...")
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                border: 1px solid #d0d0d0;
+                border-radius: 3px;
+                padding: 8px 12px;
+                font-size: 14px;
+                color: #333333;
+                font-family: '微软雅黑';
+            }
+            QLineEdit:focus {
+                border-color: #4a90e2;
+                background-color: white;
+            }
+            QLineEdit::placeholder {
+                color: #999999;
+            }
+        """)
+        self.search_input.textChanged.connect(self.filter_tools)
+        
+        # 清除按钮
+        clear_btn = QPushButton("✕")
+        clear_btn.setFixedSize(35, 35)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                border: 1px solid #6c757d;
+                border-radius: 3px;
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+                border-color: #5a6268;
+            }
+        """)
+        clear_btn.clicked.connect(self.clear_search)
+        
+        search_layout.addWidget(search_icon)
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(clear_btn)
+        
+        layout.addWidget(search_frame)
+        
+    def setup_animations(self):
+        """设置动画效果"""
+        from PyQt5.QtCore import QPropertyAnimation, QEasingCurve
+        
+        # 创建窗口出现动画
+        self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
+        self.opacity_animation.setDuration(300)
+        self.opacity_animation.setStartValue(0.0)
+        self.opacity_animation.setEndValue(1.0)
+        self.opacity_animation.setEasingCurve(QEasingCurve.OutCubic)
+        
+        # 启动动画
+        self.opacity_animation.start()
+        
+    def setup_shortcuts(self):
+        """设置快捷键"""
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+        
+        # Ctrl+F 聚焦搜索框
+        search_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        search_shortcut.activated.connect(self.focus_search)
+        
+        # Escape 清除搜索或关闭对话框
+        escape_shortcut = QShortcut(QKeySequence("Escape"), self)
+        escape_shortcut.activated.connect(self.handle_escape)
+        
+        # Ctrl+R 刷新工具
+        refresh_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+        refresh_shortcut.activated.connect(self.refresh_tools)
+        
+        # F1 显示帮助
+        help_shortcut = QShortcut(QKeySequence("F1"), self)
+        help_shortcut.activated.connect(self.show_help_docs)
+        
+        # 数字键快速访问工具 (1-9) - 延迟到工具创建后再设置
+        self.setup_tool_shortcuts_later = True
+                
+    def focus_search(self):
+        """聚焦搜索框"""
+        self.search_input.setFocus()
+        self.search_input.selectAll()
+        
+    def handle_escape(self):
+        """处理ESC键"""
+        if self.search_input.text():
+            self.clear_search()
+        else:
+            self.close()
+            
+    def activate_tool_by_index(self, index):
+        """通过索引激活工具"""
+        if 0 <= index < len(self.tool_buttons):
+            button, name, description, category = self.tool_buttons[index]
+            if button.isVisible():
+                button.click()
+        
+    def filter_tools(self, text):
+        """过滤工具"""
+        self.search_text = text.lower()
+        
+        # 如果搜索文本为空，显示所有工具
+        if not self.search_text:
+            for button, name, description, category in self.tool_buttons:
+                button.show()
+            self.update_stats_label()
+            return
+        
+        # 根据搜索文本过滤工具
+        for button, name, description, category in self.tool_buttons:
+            # 检查名称、描述或类别是否包含搜索文本
+            if (self.search_text in name.lower() or 
+                self.search_text in description.lower() or 
+                self.search_text in category.lower()):
+                button.show()
+            else:
+                button.hide()
+        
+        # 更新统计信息
+        self.update_stats_label()
+        
+    def clear_search(self):
+        """清除搜索"""
+        self.search_input.clear()
+        self.search_text = ""
+        
+        # 显示所有工具
+        for button, name, description, category in self.tool_buttons:
+            button.show()
+        
+        # 更新统计信息
+        self.update_stats_label()
+        
+    def create_tool_grid(self, layout):
+        """创建工具网格"""
+        # 工具网格容器
+        grid_frame = QFrame()
+        grid_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 5px;
+            }
+        """)
+        
+        grid_layout = QGridLayout(grid_frame)
+        grid_layout.setContentsMargins(20, 20, 20, 20)
+        grid_layout.setSpacing(15)
+        
+        # 定义工具列表 - 增加更多工具和更好的图标
+        tools = [
+            ("📊 进度报告", "管理任务进度报告", self.show_progress_report, "#667eea", "progress"),
+            ("📋 任务管理", "查看和管理任务", self.show_task_management, "#51cf66", "task"),
+            ("🔍 系统诊断", "系统状态诊断", self.show_system_diagnosis, "#ffd43b", "diagnosis"),
+            ("📁 文件管理", "文件操作工具", self.show_file_manager, "#74c0fc", "file"),
+            ("🌐 网络工具", "网络连接测试", self.show_network_tools, "#ff6b6b", "network"),
+            ("⚙️ 系统设置", "应用程序设置", self.show_system_settings, "#a855f7", "settings"),
+            ("📈 数据统计", "数据分析和统计", self.show_data_statistics, "#fd7e14", "statistics"),
+            ("🔐 安全工具", "安全相关工具", self.show_security_tools, "#e03131", "security"),
+            ("📝 日志查看", "查看系统日志", self.show_log_viewer, "#20c997", "log"),
+            ("🔄 数据同步", "数据同步工具", self.show_data_sync, "#6f42c1", "sync"),
+            ("🎨 界面主题", "自定义界面主题", self.show_theme_editor, "#fd7e14", "theme"),
+            ("❓ 帮助文档", "查看帮助文档", self.show_help_docs, "#6c757d", "help")
+        ]
+        
+        # 存储工具按钮用于搜索过滤
+        self.tool_buttons = []
+        
+        # 创建工具按钮
+        for i, (name, description, handler, color, category) in enumerate(tools):
+            row = i // 3
+            col = i % 3
+            tool_button = self.create_tool_button(name, description, handler, color, category)
+            self.tool_buttons.append((tool_button, name, description, category))
+            grid_layout.addWidget(tool_button, row, col)
+        
+        layout.addWidget(grid_frame)
+        
+        # 设置数字键快捷键
+        self.setup_tool_shortcuts()
+        
+    def setup_tool_shortcuts(self):
+        """设置工具快捷键"""
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+        
+        # 数字键快速访问工具 (1-9)
+        for i in range(1, min(10, len(self.tool_buttons) + 1)):
+            shortcut = QShortcut(QKeySequence(str(i)), self)
+            shortcut.activated.connect(lambda idx=i-1: self.activate_tool_by_index(idx))
+        
+    def create_tool_button(self, name, description, handler, color, category="general"):
+        """创建工具按钮"""
+        button = QPushButton()
+        button.setFixedSize(320, 140)  # 增大按钮尺寸
+        button.clicked.connect(lambda: self.handle_tool_click(handler, name))
+        button.setCursor(Qt.PointingHandCursor)  # 设置鼠标指针
+        
+        # 创建按钮内容布局
+        content_layout = QVBoxLayout(button)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        content_layout.setSpacing(10)
+        
+        # 提取图标和名称
+        icon_text = name.split(' ')[0]  # 提取图标
+        tool_name = name.split(' ', 1)[1] if ' ' in name else name  # 提取名称
+        
+        # 工具图标
+        icon_label = QLabel(icon_text)
+        icon_label.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                color: #333333;
+                padding: 5px;
+            }
+        """)
+        icon_label.setAlignment(Qt.AlignCenter)
+        
+        # 工具名称
+        name_label = QLabel(tool_name)
+        name_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #333333;
+                font-family: '微软雅黑';
+            }
+        """)
+        name_label.setAlignment(Qt.AlignCenter)
+        
+        # 工具描述
+        desc_label = QLabel(description)
+        desc_label.setStyleSheet("""
+            QLabel {
+                font-size: 12px;
+                color: #666666;
+                font-family: '微软雅黑';
+            }
+        """)
+        desc_label.setAlignment(Qt.AlignCenter)
+        desc_label.setWordWrap(True)
+        
+        content_layout.addWidget(icon_label)
+        content_layout.addWidget(name_label)
+        content_layout.addWidget(desc_label)
+        
+        # 设置朴素按钮样式
+        button.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 1px solid #d0d0d0;
+                border-radius: 5px;
+                color: #333333;
+            }
+            QPushButton:hover {
+                background-color: #f8f9fa;
+                border-color: #4a90e2;
+            }
+            QPushButton:pressed {
+                background-color: #e9ecef;
+                border-color: #357abd;
+            }
+        """)
+        
+        # 添加工具提示
+        button.setToolTip(f"{name}\n{description}")
+        
+        # 右键菜单 (用于主题切换)
+        button.setContextMenuPolicy(Qt.CustomContextMenu)
+        button.customContextMenuRequested.connect(self.show_theme_menu)
+        
+        return button
+        
+    def handle_tool_click(self, handler, tool_name):
+        """处理工具点击"""
+        # 更新使用统计
+        self.tool_usage_stats[tool_name] = self.tool_usage_stats.get(tool_name, 0) + 1
+        
+        # 调用原始处理函数
+        handler()
+        
+        # 保存统计信息
+        self.save_usage_stats()
+        
+        # 更新统计信息显示
+        self.update_usage_info()
+        
+    def save_usage_stats(self):
+        """保存使用统计"""
+        try:
+            import json
+            import os
+            
+            stats_file = "data/toolbox_usage_stats.json"
+            os.makedirs("data", exist_ok=True)
+            
+            with open(stats_file, 'w', encoding='utf-8') as f:
+                json.dump(self.tool_usage_stats, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存统计数据失败: {e}")
+            
+    def load_usage_stats(self):
+        """加载使用统计"""
+        try:
+            import json
+            stats_file = "data/toolbox_usage_stats.json"
+            
+            if os.path.exists(stats_file):
+                with open(stats_file, 'r', encoding='utf-8') as f:
+                    self.tool_usage_stats = json.load(f)
+        except Exception as e:
+            print(f"加载统计数据失败: {e}")
+            self.tool_usage_stats = {}
+            
+    def get_usage_info(self):
+        """获取使用统计信息"""
+        if not self.tool_usage_stats:
+            return "📊 暂无使用统计"
+        
+        # 找到最常用的工具
+        most_used = max(self.tool_usage_stats.items(), key=lambda x: x[1])
+        total_usage = sum(self.tool_usage_stats.values())
+        
+        return f"📊 总使用次数: {total_usage} | 最常用: {most_used[0]} ({most_used[1]}次)"
+        
+    def update_usage_info(self):
+        """更新使用统计信息"""
+        if hasattr(self, 'usage_label'):
+            self.usage_label.setText(self.get_usage_info())
+            
+    def get_cached_data(self, key, generator_func):
+        """获取缓存数据"""
+        if key not in self.cache:
+            self.cache[key] = generator_func()
+        return self.cache[key]
+        
+    def clear_cache(self):
+        """清除缓存"""
+        self.cache.clear()
+        
+    def setup_lazy_loading(self):
+        """设置延迟加载"""
+        from PyQt5.QtCore import QTimer
+        
+        self.lazy_load_timer = QTimer()
+        self.lazy_load_timer.timeout.connect(self.load_heavy_content)
+        self.lazy_load_timer.setSingleShot(True)
+        self.lazy_load_timer.start(500)  # 延迟500ms加载
+        
+    def load_heavy_content(self):
+        """加载重型内容"""
+        # 这里可以加载一些耗时的内容
+        # 比如工具的额外信息、图标等
+        pass
+        
+    def show_theme_menu(self, position):
+        """显示主题菜单"""
+        from PyQt5.QtWidgets import QMenu
+        
+        sender = self.sender()
+        menu = QMenu(self)
+        
+        # 主题选项
+        themes = [
+            ("🌈 渐变主题", "gradient"),
+            ("🌙 深色主题", "dark"),
+            ("☀️ 浅色主题", "light"),
+            ("🌊 蓝色主题", "blue"),
+            ("🌿 绿色主题", "green"),
+            ("🔥 红色主题", "red")
+        ]
+        
+        menu.addAction("🎨 切换主题").setEnabled(False)
+        menu.addSeparator()
+        
+        for theme_name, theme_key in themes:
+            action = menu.addAction(theme_name)
+            action.setCheckable(True)
+            action.setChecked(self.current_theme == theme_key)
+            action.triggered.connect(lambda checked, key=theme_key: self.switch_theme(key))
+        
+        menu.exec_(sender.mapToGlobal(position))
+        
+    def switch_theme(self, theme_key):
+        """切换主题"""
+        self.current_theme = theme_key
+        self.apply_theme()
+        
+    def apply_theme(self):
+        """应用主题"""
+        themes = {
+            "gradient": {
+                "background": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #667eea, stop:0.3 #764ba2, stop:1 #f093fb)",
+                "border": "3px solid rgba(255, 255, 255, 0.3)"
+            },
+            "dark": {
+                "background": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2c3e50, stop:1 #34495e)",
+                "border": "3px solid rgba(255, 255, 255, 0.2)"
+            },
+            "light": {
+                "background": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f8f9fa, stop:1 #e9ecef)",
+                "border": "3px solid rgba(0, 0, 0, 0.1)"
+            },
+            "blue": {
+                "background": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3498db, stop:1 #2980b9)",
+                "border": "3px solid rgba(255, 255, 255, 0.3)"
+            },
+            "green": {
+                "background": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2ecc71, stop:1 #27ae60)",
+                "border": "3px solid rgba(255, 255, 255, 0.3)"
+            },
+            "red": {
+                "background": "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #e74c3c, stop:1 #c0392b)",
+                "border": "3px solid rgba(255, 255, 255, 0.3)"
+            }
+        }
+        
+        if self.current_theme in themes:
+            theme = themes[self.current_theme]
+            self.setStyleSheet(f"""
+                QDialog {{
+                    background: {theme['background']};
+                    border-radius: 20px;
+                    border: {theme['border']};
+                }}
+            """)
+            
+        # 显示主题切换提示
+        from PyQt5.QtWidgets import QMessageBox
+        theme_names = {
+            "gradient": "🌈 渐变主题",
+            "dark": "🌙 深色主题", 
+            "light": "☀️ 浅色主题",
+            "blue": "🌊 蓝色主题",
+            "green": "🌿 绿色主题",
+            "red": "🔥 红色主题"
+        }
+        QMessageBox.information(self, "主题切换", f"已切换到 {theme_names.get(self.current_theme, '未知主题')}")
+        
+    def closeEvent(self, event):
+        """关闭事件"""
+        # 保存统计数据
+        self.save_usage_stats()
+        
+        # 清理缓存
+        self.clear_cache()
+        
+        # 停止定时器
+        if self.lazy_load_timer:
+            self.lazy_load_timer.stop()
+            
+        event.accept()
+        
+    def darken_color(self, hex_color, factor=0.8):
+        """使颜色变暗"""
+        hex_color = hex_color.lstrip('#')
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        darkened = tuple(int(c * factor) for c in rgb)
+        return f"#{darkened[0]:02x}{darkened[1]:02x}{darkened[2]:02x}"
+        
+    def lighten_color(self, hex_color, factor=1.2):
+        """使颜色变亮"""
+        hex_color = hex_color.lstrip('#')
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        lightened = tuple(min(255, int(c * factor)) for c in rgb)
+        return f"#{lightened[0]:02x}{lightened[1]:02x}{lightened[2]:02x}"
+        
+    def create_bottom_buttons(self, layout):
+        """创建底部按钮"""
+        button_frame = QFrame()
+        button_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 5px;
+            }
+        """)
+        
+        button_layout = QHBoxLayout(button_frame)
+        button_layout.setContentsMargins(15, 10, 15, 10)
+        button_layout.setSpacing(10)
+        
+        # 统计信息标签
+        self.stats_label = QLabel("12个实用工具助力您的工作")
+        self.stats_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: #666666;
+                font-family: '微软雅黑';
+                font-weight: normal;
+            }
+        """)
+        
+        # 刷新按钮
+        refresh_button = QPushButton("刷新")
+        refresh_button.setFixedSize(80, 35)
+        refresh_button.clicked.connect(self.refresh_tools)
+        refresh_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                border: 1px solid #6c757d;
+                border-radius: 3px;
+                font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+                border-color: #5a6268;
+            }
+            QPushButton:pressed {
+                background-color: #545b62;
+            }
+        """)
+        
+        # 最小化按钮
+        minimize_button = QPushButton("最小化")
+        minimize_button.setFixedSize(80, 35)
+        minimize_button.clicked.connect(self.showMinimized)
+        minimize_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                border: 1px solid #6c757d;
+                border-radius: 3px;
+                font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+                border-color: #5a6268;
+            }
+            QPushButton:pressed {
+                background-color: #545b62;
+            }
+        """)
+        
+        # 关闭按钮
+        close_button = QPushButton("关闭")
+        close_button.setFixedSize(80, 35)
+        close_button.clicked.connect(self.close)
+        close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                border: 1px solid #dc3545;
+                border-radius: 3px;
+                font-size: 12px;
+                font-weight: bold;
+                font-family: '微软雅黑';
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+                border-color: #c82333;
+            }
+            QPushButton:pressed {
+                background-color: #bd2130;
+            }
+        """)
+        
+        button_layout.addWidget(self.stats_label)
+        button_layout.addStretch()
+        button_layout.addWidget(refresh_button)
+        button_layout.addWidget(minimize_button)
+        button_layout.addWidget(close_button)
+        
+        layout.addWidget(button_frame)
+        
+    def refresh_tools(self):
+        """刷新工具"""
+        # 清除搜索
+        self.search_input.clear()
+        self.search_text = ""
+        
+        # 显示所有工具
+        for button, name, description, category in self.tool_buttons:
+            button.show()
+        
+        # 更新统计信息
+        self.update_stats_label()
+        
+        # 添加一个简单的提示
+        from PyQt5.QtWidgets import QMessageBox
+        QMessageBox.information(self, "提示", "🔄 工具箱已刷新！所有工具已重新加载。")
+        
+    def update_stats_label(self):
+        """更新统计信息标签"""
+        total_tools = len(self.tool_buttons)
+        visible_tools = sum(1 for button, _, _, _ in self.tool_buttons if button.isVisible())
+        
+        if hasattr(self, 'stats_label'):
+            if visible_tools == total_tools:
+                self.stats_label.setText(f"{total_tools}个实用工具助力您的工作")
+            else:
+                self.stats_label.setText(f"找到 {visible_tools}/{total_tools} 个工具")
+        
+    # 工具功能实现
+    def show_progress_report(self):
+        """显示进度报告管理"""
+        try:
+            if hasattr(self.desktop_manager, 'show_progress_report'):
+                self.desktop_manager.show_progress_report()
+            else:
+                QMessageBox.information(self, "提示", "进度报告功能暂不可用")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开进度报告失败: {str(e)}")
+            
+    def show_task_management(self):
+        """显示任务管理"""
+        try:
+            if hasattr(self.desktop_manager, 'submit_tasks'):
+                self.desktop_manager.submit_tasks()
+            else:
+                QMessageBox.information(self, "提示", "任务管理功能暂不可用")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开任务管理失败: {str(e)}")
+            
+    def show_system_diagnosis(self):
+        """显示系统诊断"""
+        try:
+            self.show_diagnosis_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开系统诊断失败: {str(e)}")
+            
+    def show_file_manager(self):
+        """显示文件管理"""
+        try:
+            self.show_file_manager_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开文件管理失败: {str(e)}")
+            
+    def show_network_tools(self):
+        """显示网络工具"""
+        try:
+            self.show_network_tools_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开网络工具失败: {str(e)}")
+            
+    def show_system_settings(self):
+        """显示系统设置"""
+        try:
+            self.show_settings_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开系统设置失败: {str(e)}")
+            
+    def show_data_statistics(self):
+        """显示数据统计"""
+        try:
+            self.show_statistics_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开数据统计失败: {str(e)}")
+            
+    def show_security_tools(self):
+        """显示安全工具"""
+        try:
+            self.show_security_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开安全工具失败: {str(e)}")
+            
+    def show_log_viewer(self):
+        """显示日志查看器"""
+        try:
+            self.show_log_viewer_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开日志查看器失败: {str(e)}")
+            
+    def show_data_sync(self):
+        """显示数据同步"""
+        try:
+            self.show_data_sync_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开数据同步失败: {str(e)}")
+            
+    def show_theme_editor(self):
+        """显示主题编辑器"""
+        try:
+            self.show_theme_editor_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开主题编辑器失败: {str(e)}")
+            
+    def show_help_docs(self):
+        """显示帮助文档"""
+        try:
+            self.show_help_dialog()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"打开帮助文档失败: {str(e)}")
+    
+    # 具体工具对话框实现
+    def show_diagnosis_dialog(self):
+        """系统诊断对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🔍 系统诊断")
+        dialog.setFixedSize(600, 400)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 诊断结果文本区域
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Consolas', '微软雅黑';
+                font-size: 12px;
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+            }
+        """)
+        
+        # 执行诊断
+        diagnosis_result = self.perform_system_diagnosis()
+        text_edit.setText(diagnosis_result)
+        
+        layout.addWidget(text_edit)
+        
+        # 关闭按钮
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+        
+        dialog.exec_()
+        
+    def perform_system_diagnosis(self):
+        """执行系统诊断"""
+        result = []
+        result.append("🔍 系统诊断报告")
+        result.append("=" * 50)
+        result.append(f"📅 诊断时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        result.append("")
+        
+        # Python环境信息
+        result.append("🐍 Python环境:")
+        result.append(f"   Python版本: {sys.version}")
+        result.append(f"   执行路径: {sys.executable}")
+        result.append("")
+        
+        # 系统信息
+        result.append("💻 系统信息:")
+        result.append(f"   操作系统: {sys.platform}")
+        result.append(f"   工作目录: {os.getcwd()}")
+        result.append("")
+        
+        # 应用程序状态
+        result.append("📱 应用程序状态:")
+        if hasattr(self.desktop_manager, 'current_role_data') and self.desktop_manager.current_role_data:
+            result.append("   ✅ 角色数据已加载")
+            role_data = self.desktop_manager.current_role_data
+            if 'selectedRole' in role_data:
+                result.append(f"   当前角色: {role_data['selectedRole'].get('label', '未知')}")
+        else:
+            result.append("   ❌ 角色数据未加载")
+            
+        if hasattr(self.desktop_manager, 'current_tasks') and self.desktop_manager.current_tasks:
+            result.append(f"   ✅ 任务数据已加载 ({len(self.desktop_manager.current_tasks)} 个任务)")
+        else:
+            result.append("   ❌ 任务数据未加载")
+        result.append("")
+        
+        # 文件状态检查
+        result.append("📁 文件状态检查:")
+        important_files = [
+            'received_data.json',
+            'received_tasks.json',
+            'requirements.txt',
+            'main.py'
+        ]
+        
+        for file_name in important_files:
+            if os.path.exists(file_name):
+                file_size = os.path.getsize(file_name)
+                result.append(f"   ✅ {file_name} (大小: {file_size} 字节)")
+            else:
+                result.append(f"   ❌ {file_name} (文件不存在)")
+        result.append("")
+        
+        # 网络连接测试
+        result.append("🌐 网络连接测试:")
+        try:
+            import requests
+            response = requests.get("http://www.baidu.com", timeout=5)
+            if response.status_code == 200:
+                result.append("   ✅ 网络连接正常")
+            else:
+                result.append(f"   ⚠️ 网络连接异常 (状态码: {response.status_code})")
+        except Exception as e:
+            result.append(f"   ❌ 网络连接失败: {str(e)}")
+        result.append("")
+        
+        result.append("=" * 50)
+        result.append("诊断完成")
+        
+        return "\n".join(result)
+        
+    def show_file_manager_dialog(self):
+        """文件管理对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📁 文件管理")
+        dialog.setFixedSize(800, 600)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 文件列表
+        file_list = QListWidget()
+        file_list.setStyleSheet("""
+            QListWidget {
+                font-family: '微软雅黑';
+                font-size: 14px;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+            }
+        """)
+        
+        # 添加文件操作按钮
+        button_layout = QHBoxLayout()
+        
+        refresh_btn = QPushButton("🔄 刷新")
+        refresh_btn.clicked.connect(lambda: self.refresh_file_list(file_list))
+        
+        open_btn = QPushButton("📂 打开文件")
+        open_btn.clicked.connect(lambda: self.open_selected_file(file_list))
+        
+        delete_btn = QPushButton("🗑️ 删除文件")
+        delete_btn.clicked.connect(lambda: self.delete_selected_file(file_list))
+        
+        button_layout.addWidget(refresh_btn)
+        button_layout.addWidget(open_btn)
+        button_layout.addWidget(delete_btn)
+        button_layout.addStretch()
+        
+        layout.addWidget(file_list)
+        layout.addLayout(button_layout)
+        
+        # 初始加载文件列表
+        self.refresh_file_list(file_list)
+        
+        dialog.exec_()
+        
+    def refresh_file_list(self, file_list):
+        """刷新文件列表"""
+        file_list.clear()
+        current_dir = os.getcwd()
+        
+        try:
+            for item in os.listdir(current_dir):
+                if os.path.isfile(item):
+                    file_list.addItem(f"📄 {item}")
+                elif os.path.isdir(item):
+                    file_list.addItem(f"📁 {item}")
+        except Exception as e:
+            file_list.addItem(f"❌ 读取目录失败: {str(e)}")
+            
+    def open_selected_file(self, file_list):
+        """打开选中的文件"""
+        current_item = file_list.currentItem()
+        if current_item:
+            file_name = current_item.text().split(" ", 1)[1]
+            try:
+                if sys.platform == "win32":
+                    os.startfile(file_name)
+                else:
+                    subprocess.run(["xdg-open", file_name])
+            except Exception as e:
+                QMessageBox.warning(self, "错误", f"无法打开文件: {str(e)}")
+                
+    def delete_selected_file(self, file_list):
+        """删除选中的文件"""
+        current_item = file_list.currentItem()
+        if current_item:
+            file_name = current_item.text().split(" ", 1)[1]
+            reply = QMessageBox.question(self, "确认删除", 
+                                       f"确定要删除文件 '{file_name}' 吗？",
+                                       QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                try:
+                    os.remove(file_name)
+                    self.refresh_file_list(file_list)
+                    QMessageBox.information(self, "成功", "文件删除成功")
+                except Exception as e:
+                    QMessageBox.warning(self, "错误", f"删除文件失败: {str(e)}")
+                    
+    def show_network_tools_dialog(self):
+        """网络工具对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🌐 网络工具")
+        dialog.setFixedSize(600, 400)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 网络测试区域
+        test_layout = QVBoxLayout()
+        
+        # Ping测试
+        ping_layout = QHBoxLayout()
+        ping_layout.addWidget(QLabel("Ping测试:"))
+        ping_input = QLineEdit("www.baidu.com")
+        ping_layout.addWidget(ping_input)
+        ping_btn = QPushButton("测试")
+        ping_btn.clicked.connect(lambda: self.ping_test(ping_input.text(), result_text))
+        ping_layout.addWidget(ping_btn)
+        test_layout.addLayout(ping_layout)
+        
+        # 结果显示
+        result_text = QTextEdit()
+        result_text.setReadOnly(True)
+        result_text.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Consolas', '微软雅黑';
+                font-size: 12px;
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+            }
+        """)
+        
+        layout.addLayout(test_layout)
+        layout.addWidget(result_text)
+        
+        dialog.exec_()
+        
+    def ping_test(self, host, result_text):
+        """执行Ping测试"""
+        try:
+            result = subprocess.run(["ping", "-n", "4", host], 
+                                  capture_output=True, text=True, timeout=10)
+            result_text.setText(result.stdout)
+        except Exception as e:
+            result_text.setText(f"Ping测试失败: {str(e)}")
+            
+    def show_settings_dialog(self):
+        """系统设置对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("⚙️ 系统设置")
+        dialog.setFixedSize(500, 400)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 设置选项
+        form_layout = QFormLayout()
+        
+        # 自动打开任务对话框
+        auto_open_checkbox = QCheckBox("启动时自动打开任务对话框")
+        auto_open_checkbox.setChecked(getattr(self.desktop_manager, 'auto_open_task_dialog', True))
+        form_layout.addRow("任务管理:", auto_open_checkbox)
+        
+        # 窗口置顶
+        always_on_top_checkbox = QCheckBox("窗口始终置顶")
+        always_on_top_checkbox.setChecked(True)
+        form_layout.addRow("窗口行为:", always_on_top_checkbox)
+        
+        # 主题选择
+        theme_combo = QComboBox()
+        theme_combo.addItems(["默认主题", "深色主题", "浅色主题"])
+        form_layout.addRow("界面主题:", theme_combo)
+        
+        layout.addLayout(form_layout)
+        
+        # 保存按钮
+        save_btn = QPushButton("保存设置")
+        save_btn.clicked.connect(dialog.close)
+        layout.addWidget(save_btn)
+        
+        dialog.exec_()
+        
+    def show_statistics_dialog(self):
+        """数据统计对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📈 数据统计")
+        dialog.setFixedSize(600, 400)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 统计信息显示
+        stats_text = QTextEdit()
+        stats_text.setReadOnly(True)
+        stats_text.setStyleSheet("""
+            QTextEdit {
+                font-family: '微软雅黑';
+                font-size: 14px;
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+            }
+        """)
+        
+        # 生成统计信息
+        stats_info = self.generate_statistics()
+        stats_text.setText(stats_info)
+        
+        layout.addWidget(stats_text)
+        
+        dialog.exec_()
+        
+    def generate_statistics(self):
+        """生成统计信息"""
+        stats = []
+        stats.append("📊 数据统计报告")
+        stats.append("=" * 40)
+        stats.append("")
+        
+        # 任务统计
+        if hasattr(self.desktop_manager, 'current_tasks') and self.desktop_manager.current_tasks:
+            tasks = self.desktop_manager.current_tasks
+            stats.append("📋 任务统计:")
+            stats.append(f"   总任务数: {len(tasks)}")
+            
+            # 按状态统计
+            status_count = {}
+            for task in tasks:
+                status = task.get('status', '未知')
+                status_count[status] = status_count.get(status, 0) + 1
+            
+            for status, count in status_count.items():
+                stats.append(f"   {status}: {count} 个")
+        else:
+            stats.append("📋 任务统计: 暂无任务数据")
+            
+        stats.append("")
+        
+        # 文件统计
+        stats.append("📁 文件统计:")
+        current_dir = os.getcwd()
+        try:
+            files = [f for f in os.listdir(current_dir) if os.path.isfile(f)]
+            dirs = [d for d in os.listdir(current_dir) if os.path.isdir(d)]
+            stats.append(f"   文件数量: {len(files)}")
+            stats.append(f"   目录数量: {len(dirs)}")
+            
+            # 文件大小统计
+            total_size = sum(os.path.getsize(f) for f in files if os.path.exists(f))
+            stats.append(f"   总文件大小: {total_size / 1024:.2f} KB")
+        except Exception as e:
+            stats.append(f"   统计失败: {str(e)}")
+            
+        stats.append("")
+        stats.append("=" * 40)
+        
+        return "\n".join(stats)
+        
+    def show_security_dialog(self):
+        """安全工具对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🔐 安全工具")
+        dialog.setFixedSize(500, 300)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 安全工具按钮
+        tools_layout = QVBoxLayout()
+        
+        # 密码生成器
+        pwd_gen_btn = QPushButton("🔑 密码生成器")
+        pwd_gen_btn.clicked.connect(self.show_password_generator)
+        tools_layout.addWidget(pwd_gen_btn)
+        
+        # 文件加密
+        encrypt_btn = QPushButton("🔒 文件加密")
+        encrypt_btn.clicked.connect(self.show_file_encryption)
+        tools_layout.addWidget(encrypt_btn)
+        
+        # 安全检查
+        security_check_btn = QPushButton("🛡️ 安全检查")
+        security_check_btn.clicked.connect(self.perform_security_check)
+        tools_layout.addWidget(security_check_btn)
+        
+        layout.addLayout(tools_layout)
+        
+        dialog.exec_()
+        
+    def show_password_generator(self):
+        """显示密码生成器"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🔑 密码生成器")
+        dialog.setFixedSize(400, 300)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 密码长度
+        length_layout = QHBoxLayout()
+        length_layout.addWidget(QLabel("密码长度:"))
+        length_spin = QSpinBox()
+        length_spin.setRange(8, 32)
+        length_spin.setValue(12)
+        length_layout.addWidget(length_spin)
+        layout.addLayout(length_layout)
+        
+        # 生成按钮
+        generate_btn = QPushButton("生成密码")
+        generate_btn.clicked.connect(lambda: self.generate_password(length_spin.value(), pwd_display))
+        layout.addWidget(generate_btn)
+        
+        # 密码显示
+        pwd_display = QLineEdit()
+        pwd_display.setReadOnly(True)
+        pwd_display.setStyleSheet("""
+            QLineEdit {
+                font-family: 'Consolas';
+                font-size: 16px;
+                padding: 10px;
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+            }
+        """)
+        layout.addWidget(pwd_display)
+        
+        dialog.exec_()
+        
+    def generate_password(self, length, display):
+        """生成密码"""
+        import random
+        import string
+        
+        characters = string.ascii_letters + string.digits + "!@#$%^&*"
+        password = ''.join(random.choice(characters) for _ in range(length))
+        display.setText(password)
+        
+    def show_file_encryption(self):
+        """显示文件加密工具"""
+        QMessageBox.information(self, "提示", "文件加密功能开发中...")
+        
+    def perform_security_check(self):
+        """执行安全检查"""
+        QMessageBox.information(self, "提示", "安全检查功能开发中...")
+        
+    def show_log_viewer_dialog(self):
+        """日志查看器对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📝 日志查看器")
+        dialog.setFixedSize(800, 600)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 日志文件选择
+        file_layout = QHBoxLayout()
+        file_layout.addWidget(QLabel("日志文件:"))
+        file_combo = QComboBox()
+        file_combo.addItems(["pdf_client.log", "system.log", "error.log"])
+        file_layout.addWidget(file_combo)
+        
+        refresh_btn = QPushButton("🔄 刷新")
+        refresh_btn.clicked.connect(lambda: self.load_log_file(file_combo.currentText(), log_text))
+        file_layout.addWidget(refresh_btn)
+        
+        layout.addLayout(file_layout)
+        
+        # 日志内容显示
+        log_text = QTextEdit()
+        log_text.setReadOnly(True)
+        log_text.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Consolas', '微软雅黑';
+                font-size: 12px;
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+            }
+        """)
+        layout.addWidget(log_text)
+        
+        # 初始加载日志
+        self.load_log_file(file_combo.currentText(), log_text)
+        
+        dialog.exec_()
+        
+    def load_log_file(self, filename, text_widget):
+        """加载日志文件"""
+        try:
+            if os.path.exists(filename):
+                with open(filename, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                text_widget.setText(content)
+            else:
+                text_widget.setText(f"日志文件 '{filename}' 不存在")
+        except Exception as e:
+            text_widget.setText(f"读取日志文件失败: {str(e)}")
+            
+    def show_data_sync_dialog(self):
+        """数据同步对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🔄 数据同步")
+        dialog.setFixedSize(500, 300)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 同步选项
+        sync_layout = QVBoxLayout()
+        
+        # 任务数据同步
+        task_sync_btn = QPushButton("📋 同步任务数据")
+        task_sync_btn.clicked.connect(lambda: self.sync_task_data())
+        sync_layout.addWidget(task_sync_btn)
+        
+        # 用户数据同步
+        user_sync_btn = QPushButton("👤 同步用户数据")
+        user_sync_btn.clicked.connect(lambda: self.sync_user_data())
+        sync_layout.addWidget(user_sync_btn)
+        
+        # 配置文件同步
+        config_sync_btn = QPushButton("⚙️ 同步配置文件")
+        config_sync_btn.clicked.connect(lambda: self.sync_config_data())
+        sync_layout.addWidget(config_sync_btn)
+        
+        layout.addLayout(sync_layout)
+        
+        dialog.exec_()
+        
+    def sync_task_data(self):
+        """同步任务数据"""
+        try:
+            if hasattr(self.desktop_manager, 'refresh_task_data'):
+                self.desktop_manager.refresh_task_data()
+                QMessageBox.information(self, "成功", "任务数据同步完成")
+            else:
+                QMessageBox.warning(self, "错误", "任务数据同步功能不可用")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"任务数据同步失败: {str(e)}")
+            
+    def sync_user_data(self):
+        """同步用户数据"""
+        QMessageBox.information(self, "提示", "用户数据同步功能开发中...")
+        
+    def sync_config_data(self):
+        """同步配置文件"""
+        QMessageBox.information(self, "提示", "配置文件同步功能开发中...")
+        
+    def show_theme_editor_dialog(self):
+        """主题编辑器对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🎨 主题编辑器")
+        dialog.setFixedSize(500, 400)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 主题选择
+        theme_layout = QVBoxLayout()
+        theme_layout.addWidget(QLabel("选择主题:"))
+        
+        theme_combo = QComboBox()
+        theme_combo.addItems(["默认主题", "深色主题", "浅色主题", "蓝色主题", "绿色主题"])
+        theme_layout.addWidget(theme_combo)
+        
+        # 预览按钮
+        preview_btn = QPushButton("预览主题")
+        preview_btn.clicked.connect(lambda: self.preview_theme(theme_combo.currentText()))
+        theme_layout.addWidget(preview_btn)
+        
+        layout.addLayout(theme_layout)
+        
+        dialog.exec_()
+        
+    def preview_theme(self, theme_name):
+        """预览主题"""
+        QMessageBox.information(self, "提示", f"主题 '{theme_name}' 预览功能开发中...")
+        
+    def show_help_dialog(self):
+        """帮助文档对话框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("❓ 帮助文档")
+        dialog.setFixedSize(700, 500)
+        dialog.setModal(True)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # 帮助内容
+        help_text = QTextEdit()
+        help_text.setReadOnly(True)
+        help_text.setStyleSheet("""
+            QTextEdit {
+                font-family: '微软雅黑';
+                font-size: 14px;
+                background: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+            }
+        """)
+        
+        help_content = self.get_help_content()
+        help_text.setText(help_content)
+        
+        layout.addWidget(help_text)
+        
+        dialog.exec_()
+        
+    def get_help_content(self):
+        """获取帮助内容"""
+        help_text = []
+        help_text.append("🔧 智能工具箱使用帮助")
+        help_text.append("=" * 50)
+        help_text.append("")
+        help_text.append("📊 进度报告")
+        help_text.append("   管理任务进度报告，查看任务完成情况")
+        help_text.append("")
+        help_text.append("📋 任务管理")
+        help_text.append("   查看和管理当前任务列表")
+        help_text.append("")
+        help_text.append("🔍 系统诊断")
+        help_text.append("   检查系统状态和应用程序运行情况")
+        help_text.append("")
+        help_text.append("📁 文件管理")
+        help_text.append("   管理项目文件和目录")
+        help_text.append("")
+        help_text.append("🌐 网络工具")
+        help_text.append("   测试网络连接和网络状态")
+        help_text.append("")
+        help_text.append("⚙️ 系统设置")
+        help_text.append("   配置应用程序参数和选项")
+        help_text.append("")
+        help_text.append("📈 数据统计")
+        help_text.append("   查看数据统计和分析报告")
+        help_text.append("")
+        help_text.append("🔐 安全工具")
+        help_text.append("   密码生成、文件加密等安全功能")
+        help_text.append("")
+        help_text.append("📝 日志查看")
+        help_text.append("   查看系统日志和错误信息")
+        help_text.append("")
+        help_text.append("🔄 数据同步")
+        help_text.append("   同步任务数据和用户信息")
+        help_text.append("")
+        help_text.append("🎨 界面主题")
+        help_text.append("   自定义应用程序界面主题")
+        help_text.append("")
+        help_text.append("❓ 帮助文档")
+        help_text.append("   查看使用说明和帮助信息")
+        help_text.append("")
+        help_text.append("=" * 50)
+        help_text.append("如有问题，请联系技术支持")
+        
+        return "\n".join(help_text)
+
+
 class DesktopManager(QWidget):
     """桌面管理器 - 在桌面顶部悬浮显示"""
     
@@ -4749,8 +6251,23 @@ class DesktopManager(QWidget):
             
     def show_toolbox_action(self):
         """显示工具箱"""
-        print("工具箱功能开发中...")
-        # TODO: 实现工具箱界面
+        try:
+            print("🔧 正在打开Windows工具箱...")
+            
+            # 如果工具箱对话框已存在且可见，则显示并激活
+            if hasattr(self, 'toolbox_dialog') and self.toolbox_dialog and self.toolbox_dialog.isVisible():
+                self.toolbox_dialog.raise_()
+                self.toolbox_dialog.activateWindow()
+                return
+                
+            # 创建新的Windows工具箱对话框
+            from src.desktop.toolbox_manager import WindowsToolboxDialog
+            self.toolbox_dialog = WindowsToolboxDialog(None)  # 使用None作为父窗口，避免父窗口类型问题
+            self.toolbox_dialog.show()
+            
+        except Exception as e:
+            print(f"❌ 打开Windows工具箱失败: {str(e)}")
+            QMessageBox.critical(self, "错误", f"打开Windows工具箱失败:\n{str(e)}")
     
     def show_progress_report(self):
         """显示进度报告管理对话框"""

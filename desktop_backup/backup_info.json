@@ -1,46 +1,10 @@
 {
-  "backup_time": 1752287488.3562233,
+  "backup_time": 1752325419.4234908,
   "desktop_path": "C:\\Users\\33089\\Desktop",
   "files": [
     {
-      "original_path": "C:\\Users\\33089\\Desktop\\sc",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\sc_4",
-      "name": "sc",
-      "extension": "",
-      "size": 18933435,
-      "modified_time": 1751979794.2430694,
-      "type": "folder"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\SecureCRT_Portable",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\SecureCRT_Portable_86",
-      "name": "SecureCRT_Portable",
-      "extension": "",
-      "size": 55933941,
-      "modified_time": 1751443706.756338,
-      "type": "folder"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\任务导入(1).xlsx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\任务导入(1)_5.xlsx",
-      "name": "任务导入(1).xlsx",
-      "extension": ".xlsx",
-      "size": 15950,
-      "modified_time": 1751801735.1987648,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\孪生最终修改 (2).docx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\孪生最终修改 (2)_7.docx",
-      "name": "孪生最终修改 (2).docx",
-      "extension": ".docx",
-      "size": 3954296,
-      "modified_time": 1751518606.2655604,
-      "type": "file"
-    },
-    {
       "original_path": "C:\\Users\\33089\\Desktop\\成员D技能稿.docx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\成员D技能稿_7.docx",
+      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\成员D技能稿_21.docx",
       "name": "成员D技能稿.docx",
       "extension": ".docx",
       "size": 18073,
@@ -48,26 +12,8 @@
       "type": "file"
     },
     {
-      "original_path": "C:\\Users\\33089\\Desktop\\成员D技能稿2.docx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\成员D技能稿2_7.docx",
-      "name": "成员D技能稿2.docx",
-      "extension": ".docx",
-      "size": 21842,
-      "modified_time": 1751620289.0251706,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\用户导入模板 (1).xlsx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\用户导入模板 (1)_5.xlsx",
-      "name": "用户导入模板 (1).xlsx",
-      "extension": ".xlsx",
-      "size": 9843,
-      "modified_time": 1751801993.935226,
-      "type": "file"
-    },
-    {
       "original_path": "C:\\Users\\33089\\Desktop\\网络工程师稿子(1).docx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\网络工程师稿子(1)_7.docx",
+      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\网络工程师稿子(1)_21.docx",
       "name": "网络工程师稿子(1).docx",
       "extension": ".docx",
       "size": 19239,
@@ -76,20 +22,11 @@
     },
     {
       "original_path": "C:\\Users\\33089\\Desktop\\网络工程师稿子.docx",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\网络工程师稿子_86.docx",
+      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\网络工程师稿子_100.docx",
       "name": "网络工程师稿子.docx",
       "extension": ".docx",
       "size": 18551,
       "modified_time": 1750563739.2570775,
-      "type": "file"
-    },
-    {
-      "original_path": "C:\\Users\\33089\\Desktop\\项目任务汇报单子(系统架构设计师).pdf",
-      "backup_path": "E:\\项目\\新建文件夹\\desktop_backup\\项目任务汇报单子(系统架构设计师)_4.pdf",
-      "name": "项目任务汇报单子(系统架构设计师).pdf",
-      "extension": ".pdf",
-      "size": 108114,
-      "modified_time": 1750255549.953088,
       "type": "file"
     }
   ]
