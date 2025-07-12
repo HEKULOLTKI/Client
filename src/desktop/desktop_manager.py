@@ -6262,7 +6262,7 @@ class DesktopManager(QWidget):
                 
             # 创建新的Windows工具箱对话框
             from src.desktop.toolbox_manager import WindowsToolboxDialog
-            self.toolbox_dialog = WindowsToolboxDialog(None)  # 使用None作为父窗口，避免父窗口类型问题
+            self.toolbox_dialog = WindowsToolboxDialog(self)  # 使用self作为父窗口，确保正确的窗口关系
             self.toolbox_dialog.show()
             
         except Exception as e:
@@ -7085,6 +7085,9 @@ class DesktopManager(QWidget):
         if self.pdf_preview_dialog:
             self.pdf_preview_dialog.close()
             print("PDF预览对话框已关闭")
+        if hasattr(self, 'toolbox_dialog') and self.toolbox_dialog:
+            self.toolbox_dialog.close()
+            print("工具箱窗口已关闭")
             
         print("所有子窗口清理完成")
         

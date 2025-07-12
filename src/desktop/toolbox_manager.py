@@ -699,7 +699,7 @@ class WindowsToolboxDialog(QDialog):
                 background-color: #bd2130;
             }
         """)
-        close_btn.clicked.connect(self.close)
+        close_btn.clicked.connect(self.close_toolbox_only)
         
         button_layout.addWidget(stats_label)
         button_layout.addStretch()
@@ -728,7 +728,7 @@ class WindowsToolboxDialog(QDialog):
         
         # Escape 关闭对话框
         escape_shortcut = QShortcut(QKeySequence("Escape"), self)
-        escape_shortcut.activated.connect(self.close)
+        escape_shortcut.activated.connect(self.close_toolbox_only)
         
         # Ctrl+R 刷新
         refresh_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
@@ -748,6 +748,40 @@ class WindowsToolboxDialog(QDialog):
             self.activateWindow()
         except Exception as e:
             print(f"显示工具箱时出错: {e}")
+    
+    def close_toolbox_only(self):
+        """只关闭工具箱，不影响其他窗口"""
+        try:
+            print("🔧 正在关闭工具箱...")
+            
+            # 停止动画
+            if hasattr(self, 'opacity_animation'):
+                self.opacity_animation.stop()
+            
+            # 清理所有执行器线程
+            for executor in self.executors[:]:  # 使用副本进行迭代
+                try:
+                    if executor.isRunning():
+                        executor.quit()
+                        executor.wait(1000)  # 等待最多1秒
+                    executor.deleteLater()
+                except Exception as e:
+                    print(f"清理执行器时出错: {e}")
+            
+            # 清空执行器列表
+            self.executors.clear()
+            
+            # 只关闭工具箱窗口，不影响父窗口
+            self.hide()
+            self.deleteLater()
+            
+            print("✅ 工具箱已关闭")
+            
+        except Exception as e:
+            print(f"❌ 关闭工具箱时出错: {e}")
+            # 即使出错也要确保窗口关闭
+            self.hide()
+            self.deleteLater()
     
     def closeEvent(self, event):
         """关闭事件处理"""
